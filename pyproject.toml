@@ -1,0 +1,54 @@
+[project]
+name = "trans-lc-pilot"
+version = "0.1.0"
+description = "LangChain-based Python agent pilot"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=0.3",
+    "langchain-core>=0.3",
+    "langchain-openai>=0.3",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+trans-lc-pilot = "trans_lc_pilot.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trans_lc_pilot"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "D",    # pydocstyle — enforce Google-style docstrings
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes — real bug detection
+    "I",    # isort — import sorting
+    "UP",   # pyupgrade — modernize to 3.12 syntax
+    "B",    # bugbear — common pitfalls
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "RUF",  # ruff-specific lints
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"src/trans_lc_pilot/__init__.py" = ["D104"]
+"tests/**" = ["D"]
