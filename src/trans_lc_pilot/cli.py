@@ -1,12 +1,11 @@
-"""Command-line entry: single-shot prompt or interactive REPL."""
+"""Command-line entry: one-shot prompt or the interactive REPL."""
 from __future__ import annotations
 
 import argparse
 import sys
-import termios
 import traceback
-import tty
 
+from . import repl
 from .agent import build_agent, run_once
 from .config import load_settings
 
@@ -28,75 +27,68 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def run_repl(agent) -> int:
-    """Run the agent in an interactive REPL.
-
-    Reads lines from stdin until end-of-file (``Ctrl-D``) or
-    ``KeyboardInterrupt`` (``Ctrl-C``) and invokes the agent on
-    each non-empty line. Empty lines are skipped without an LLM
-    call. Lone surrogates (``U+D800``-``U+DFFF``) in user input
-    are replaced with the Unicode replacement character
-    (``U+FFFD``) so the message can be re-encoded as UTF-8 when
-    sent to the OpenAI API.
+def _run_oneshot(prompt: str) -> int:
+    """Send one prompt to the agent, print the reply, and finish.
 
     Args:
-        agent: Compiled agent produced by
-            :func:`trans_lc_pilot.agent.build_agent`.
+        prompt: Natural-language prompt.
 
     Returns:
-        int: Process-style exit code; ``0`` on clean exit.
+        int: ``0`` on success; failures propagate to :func:`main`.
     """
-    print("trans-lc-pilot REPL. Ctrl-D to exit.")
-    # Enable IUTF8 on the controlling TTY so the kernel's line
-    # discipline deletes one UTF-8 character atomically instead of
-    # one byte at a time (the latter leaves orphan continuation
-    # bytes and visually "half-deletes" wide CJK characters).
-    if sys.stdin.isatty():
-        try:
-            attrs = termios.tcgetattr(sys.stdin.fileno())
-            attrs[0] |= tty.IUTF8
-            termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, attrs)
-        except (termios.error, AttributeError, OSError):
-            pass
-    while True:
-        try:
-            line = input("> ").strip()
-        except EOFError:
-            print()
-            return 0
-        except KeyboardInterrupt:
-            print()
-            return 0
-        if not line:
-            continue
-        print(run_once(agent, line))
+    print(run_once(build_agent(load_settings()), prompt))
+    return 0
+
+
+def _run_interactive() -> int:
+    """Enter the interactive REPL.
+
+    Returns:
+        int: Exit code from the REPL loop.
+    """
+    return repl.run(load_settings())
+
+
+def _dispatch(argv: list[str]) -> int:
+    """Route an argument vector to the one-shot or interactive mode.
+
+    A prompt argument selects the one-shot mode; otherwise the
+    interactive REPL starts.
+
+    Args:
+        argv: Argument vector excluding the program name.
+
+    Returns:
+        int: ``0`` on success.
+    """
+    args = parse_args(argv)
+    if args.prompt:
+        exit_code = _run_oneshot(" ".join(args.prompt))
+    else:
+        exit_code = _run_interactive()
+    return exit_code
 
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``trans-lc-pilot`` console script.
 
-    Dispatches to the one-shot path when a prompt is supplied on
-    the command line, otherwise drops into the interactive REPL.
+    Two ways in:
+
+    * ``trans-lc-pilot`` — interactive REPL.
+    * ``trans-lc-pilot "prompt"`` — one-shot agent call.
 
     Args:
         argv: Optional argument vector excluding the program name;
             defaults to ``sys.argv[1:]`` when ``None``.
 
     Returns:
-        int: Exit code; ``0`` for a clean one-shot run or a clean
-        REPL exit (``Ctrl-D`` / ``Ctrl-C``), ``1`` when an exception
-        is caught and reported to ``stderr``.
+        int: Exit code; ``0`` for a clean run or REPL exit
+        (``Ctrl-D`` / ``Ctrl-C``), ``1`` when an exception is caught
+        and reported to ``stderr``.
     """
-    args = parse_args(argv if argv is not None else sys.argv[1:])
+    argv = list(argv if argv is not None else sys.argv[1:])
     try:
-        settings = load_settings()
-        agent = build_agent(settings)
-        prompt = " ".join(args.prompt) if args.prompt else None
-        if prompt is not None:
-            print(run_once(agent, prompt))
-            exit_code = 0
-        else:
-            exit_code = run_repl(agent)
+        exit_code = _dispatch(argv)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)

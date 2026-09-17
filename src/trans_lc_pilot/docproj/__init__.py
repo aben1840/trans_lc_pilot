@@ -14,6 +14,7 @@ Typical usage::
 """
 from __future__ import annotations
 
+from . import present
 from .model import RENDERERS, Block, DocProj, Renderer, register_renderer
 from .readers import READERS, Reader, read, register_reader
 from .render import render_html, render_json, render_markdown
@@ -25,6 +26,7 @@ __all__ = [
     "DocProj",
     "Reader",
     "Renderer",
+    "present",
     "read",
     "register_reader",
     "register_renderer",

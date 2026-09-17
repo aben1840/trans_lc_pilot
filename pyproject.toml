@@ -26,6 +26,7 @@ packages = ["src/trans_lc_pilot"]
 [dependency-groups]
 dev = [
     "ruff>=0.6",
+    "python-docx>=1.1",
 ]
 
 [tool.ruff]
@@ -48,6 +49,10 @@ select = [
 ]
 fixable = ["ALL"]
 unfixable = []
+# This project processes Chinese documents, so fullwidth punctuation is
+# deliberate rather than a mistyped ASCII lookalike. These are the ones
+# ruff's RUF001 otherwise flags.
+allowed-confusables = ["，", "；", "：", "？", "！", "‘", "’", "（", "）"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

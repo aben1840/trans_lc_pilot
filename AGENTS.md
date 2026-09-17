@@ -3,6 +3,20 @@
 Contributor guide for `trans-lc-pilot`, a minimal LangChain tool-calling agent
 served through a small CLI. Keep changes tight, typed, and environment-driven.
 
+## Working Agreement
+
+**Clarify before acting.** When a request is ambiguous, or a decision has more
+than one defensible answer, stop and ask before proceeding — do not pick one at
+random. State the options and their trade-offs, then let the human decide. This
+covers naming, module layout, file formats, dependency choices, and scope, not
+just commits.
+
+Answer from the repository when the repository already answers it (existing
+style, prior decisions, `git log`); ask only about genuine forks in the road.
+
+When a decision cannot wait, make it visible in the response: say what was
+chosen, what the alternatives were, and what changing course later would cost.
+
 ## Project Structure & Module Organization
 
 The project follows a `src/`-layout Python package. All application code lives
