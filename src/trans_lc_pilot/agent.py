@@ -75,11 +75,14 @@ def run_once(agent, message: str) -> str:
     result = agent.invoke({"messages": [{"role": "user", "content": message}]})
     messages = result.get("messages", [])
     if not messages:
-        return ""
-    last = messages[-1]
-    content = getattr(last, "content", "")
-    if isinstance(content, list):
-        return "".join(
-            block.get("text", "") for block in content if isinstance(block, dict)
-        )
-    return str(content)
+        final = ""
+    else:
+        last = messages[-1]
+        content = getattr(last, "content", "")
+        if isinstance(content, list):
+            final = "".join(
+                block.get("text", "") for block in content if isinstance(block, dict)
+            )
+        else:
+            final = str(content)
+    return final

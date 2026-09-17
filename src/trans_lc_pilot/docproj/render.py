@@ -30,21 +30,25 @@ td.muted { color: #888; font-size: 0.85em; }
 def _conf_class(conf: float) -> str:
     """Map a confidence score to a CSS row class."""
     if conf >= 0.8:
-        return "conf-high"
-    if conf >= 0.5:
-        return "conf-med"
-    return "conf-low"
+        cls = "conf-high"
+    elif conf >= 0.5:
+        cls = "conf-med"
+    else:
+        cls = "conf-low"
+    return cls
 
 
 def _kind_display(kind: str, level: int | None) -> str:
     """Short label for the ``kind`` column in the HTML table."""
     if kind == "heading" and level is not None:
-        return f"H{level}"
-    if kind == "table":
-        return "TBL"
-    if kind == "image":
-        return "IMG"
-    return kind
+        label = f"H{level}"
+    elif kind == "table":
+        label = "TBL"
+    elif kind == "image":
+        label = "IMG"
+    else:
+        label = kind
+    return label
 
 
 def render_html(proj: DocProj) -> str:

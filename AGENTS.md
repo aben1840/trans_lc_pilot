@@ -35,9 +35,29 @@ There is no test runner wired up yet; see *Testing Guidelines* below.
 - `snake_case` for modules, functions, and variables; `PascalCase` for classes
   (e.g. `Settings`). Module filenames are short nouns (`agent.py`, `tools.py`).
 - Keep functions small and pure where possible; side effects belong in `cli.py`.
-- Prefer `if … elif … else` chains over early `return` statements to express
-  branching logic; reach for early returns only when guarding against errors
-  (e.g. raising before the main branch).
+- Express branching with `if … elif … else` chains. 
+  - Prefer this:
+
+    ```python
+    if kind == "docx":
+        reader = docx_to_docproj
+    elif kind == "md":
+        reader = md_to_docproj
+    else:
+        raise ValueError(f"unsupported kind: {kind}")
+    return reader(path)
+    ```
+
+  - Not this:
+
+    ```python
+    if kind == "docx":
+        return docx_to_docproj(path)
+    if kind == "md":
+        return md_to_docproj(path)
+    raise ValueError(f"unsupported kind: {kind}")
+    ```
+  
 - `ruff` is the configured linter (see `[tool.ruff]` in `pyproject.toml`).
   Run `uv run ruff check .` to lint, `uv run ruff check --fix .` to apply
   safe auto-fixes. Public functions, classes, and modules must carry

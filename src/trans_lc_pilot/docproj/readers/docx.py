@@ -81,8 +81,7 @@ def _html_to_blocks(html: str) -> list[Block]:
                         signals=["plain_text_node"],
                     )
                 )
-            continue
-        if isinstance(elem, Tag):
+        elif isinstance(elem, Tag):
             block = _tag_to_block(elem, idx=len(blocks))
             if block is not None:
                 blocks.append(block)
@@ -98,57 +97,59 @@ def _tag_to_block(tag: Tag, *, idx: int) -> Block | None:
     text = tag.get_text(" ", strip=True)
 
     if name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
-        level = int(name[1])
-        if not text:
-            return None
-        return Block(
-            idx=idx,
-            kind="heading",
-            level=level,
-            style_hint=name,
-            text=text,
-            kind_confidence=1.0,
-            level_confidence=1.0,
-            signals=["mammoth_conversion", f"tag:{name}"],
-        )
-    if name == "p":
-        if not text and not tag.find("img"):
-            return None
-        return Block(
-            idx=idx,
-            kind="paragraph",
-            text=text,
-            has_image=bool(tag.find("img")),
-            kind_confidence=1.0,
-            signals=["mammoth_conversion", "tag:p"],
-        )
-    if name == "table":
-        table_text = _table_to_text(tag)
-        return Block(
+        if text:
+            block = Block(
+                idx=idx,
+                kind="heading",
+                level=int(name[1]),
+                style_hint=name,
+                text=text,
+                kind_confidence=1.0,
+                level_confidence=1.0,
+                signals=["mammoth_conversion", f"tag:{name}"],
+            )
+        else:
+            block = None
+    elif name == "p":
+        if text or tag.find("img"):
+            block = Block(
+                idx=idx,
+                kind="paragraph",
+                text=text,
+                has_image=bool(tag.find("img")),
+                kind_confidence=1.0,
+                signals=["mammoth_conversion", "tag:p"],
+            )
+        else:
+            block = None
+    elif name == "table":
+        block = Block(
             idx=idx,
             kind="table",
-            text=table_text,
+            text=_table_to_text(tag),
             in_table=True,
             kind_confidence=1.0,
             signals=["mammoth_conversion", "tag:table"],
         )
-    if name == "img":
-        return Block(
+    elif name == "img":
+        block = Block(
             idx=idx,
             kind="image",
             has_image=True,
             kind_confidence=1.0,
             signals=["mammoth_conversion", "tag:img"],
         )
-    if text:
-        return Block(
+    elif text:
+        block = Block(
             idx=idx,
             kind="paragraph",
             text=text,
             kind_confidence=0.7,
             signals=["mammoth_conversion", f"unknown_tag:{name}"],
         )
-    return None
+    else:
+        block = None
+    return block
 
 
 def _table_to_text(table_tag: Tag) -> str:

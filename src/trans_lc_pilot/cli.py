@@ -69,7 +69,6 @@ def run_repl(agent) -> int:
             return 0
         if not line:
             continue
-        # line = re.sub(r"[\ud800-\udfff]", "�", line)
         print(run_once(agent, line))
 
 
@@ -95,13 +94,14 @@ def main(argv: list[str] | None = None) -> int:
         prompt = " ".join(args.prompt) if args.prompt else None
         if prompt is not None:
             print(run_once(agent, prompt))
-            return 0
+            exit_code = 0
         else:
-            return run_repl(agent)
+            exit_code = run_repl(agent)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
-        return 1
+        exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":
