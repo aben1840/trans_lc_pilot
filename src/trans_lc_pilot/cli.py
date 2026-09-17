@@ -17,28 +17,29 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     Returns:
         argparse.Namespace: Parsed arguments. ``prompt`` is a list of
-        strings (empty when omitted, which triggers REPL mode).
+        strings (empty when omitted, in which case ``main`` enters
+        REPL mode).
     """
     parser = argparse.ArgumentParser(prog="trans-lc-pilot")
     parser.add_argument("prompt", nargs="*", help="Prompt text; omit for REPL.")
     return parser.parse_args(argv)
 
 
-def dispatch(agent, prompt: str | None) -> int:
-    """Run the agent either for a single prompt or in an interactive REPL.
+def run_repl(agent) -> int:
+    """Run the agent in an interactive REPL.
+
+    Reads lines from stdin until end-of-file (``Ctrl-D``) or
+    ``KeyboardInterrupt`` (``Ctrl-C``) and invokes the agent on
+    each non-empty line. Empty lines are skipped without an LLM
+    call.
 
     Args:
         agent: Compiled agent produced by
             :func:`trans_lc_pilot.agent.build_agent`.
-        prompt: Single-shot user prompt, or ``None`` to enter the REPL.
 
     Returns:
-        int: Process-style exit code; ``0`` for both the single-shot
-        path and a clean REPL exit (``Ctrl-D`` / ``Ctrl-C``).
+        int: Process-style exit code; ``0`` on clean exit.
     """
-    if prompt is not None:
-        print(run_once(agent, prompt))
-        return 0
     print("trans-lc-pilot REPL. Ctrl-D to exit.")
     while True:
         try:
@@ -57,19 +58,26 @@ def dispatch(agent, prompt: str | None) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``trans-lc-pilot`` console script.
 
+    Dispatches to the one-shot path when a prompt is supplied on
+    the command line, otherwise drops into the interactive REPL.
+
     Args:
         argv: Optional argument vector excluding the program name;
             defaults to ``sys.argv[1:]`` when ``None``.
 
     Returns:
-        int: Exit code forwarded from :func:`dispatch`.
-    """    
+        int: Exit code; ``0`` for a clean one-shot run or a clean
+        REPL exit (``Ctrl-D`` / ``Ctrl-C``).
+    """
+    args = parse_args(argv if argv is not None else sys.argv[1:])
     settings = load_settings()
     agent = build_agent(settings)
-    
-    args = parse_args(argv if argv is not None else sys.argv[1:])
     prompt = " ".join(args.prompt) if args.prompt else None
-    return dispatch(agent, prompt)
+    if prompt is not None:
+        print(run_once(agent, prompt))
+        return 0
+    else:
+        return run_repl(agent)
 
 
 if __name__ == "__main__":
