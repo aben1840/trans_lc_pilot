@@ -17,35 +17,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     Returns:
         argparse.Namespace: Parsed arguments. ``prompt`` is a list of
-        strings (empty when omitted, which triggers REPL mode);
-        ``model`` is an optional ``--model`` override.
+        strings (empty when omitted, which triggers REPL mode).
     """
     parser = argparse.ArgumentParser(prog="trans-lc-pilot")
     parser.add_argument("prompt", nargs="*", help="Prompt text; omit for REPL.")
-    parser.add_argument("--model", help="Override OPENAI_MODEL.")
     return parser.parse_args(argv)
-
-
-def apply_overrides(args: argparse.Namespace):
-    """Apply CLI-driven overrides and reload settings.
-
-    Args:
-        args: Parsed :class:`argparse.Namespace` from :func:`parse_args`.
-
-    Returns:
-        Settings: Freshly loaded
-        :class:`~trans_lc_pilot.config.Settings`, after mutating the
-        process environment with any ``--model`` override.
-
-    Side Effects:
-        When ``args.model`` is truthy, writes ``OPENAI_MODEL`` into
-        :data:`os.environ` so the subsequent ``load_settings()`` call
-        picks it up.
-    """
-    if args.model:
-        import os
-        os.environ["OPENAI_MODEL"] = args.model
-    return load_settings()
 
 
 def dispatch(agent, prompt: str | None) -> int:
@@ -87,10 +63,11 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         int: Exit code forwarded from :func:`dispatch`.
-    """
-    args = parse_args(argv if argv is not None else sys.argv[1:])
-    settings = apply_overrides(args)
+    """    
+    settings = load_settings()
     agent = build_agent(settings)
+    
+    args = parse_args(argv if argv is not None else sys.argv[1:])
     prompt = " ".join(args.prompt) if args.prompt else None
     return dispatch(agent, prompt)
 

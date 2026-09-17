@@ -17,9 +17,6 @@ uv run trans-lc-pilot "What time is it in UTC?"
 
 # REPL
 uv run trans-lc-pilot
-
-# override model
-uv run trans-lc-pilot --model gpt-4o "hello"
 ```
 
 ## Layout

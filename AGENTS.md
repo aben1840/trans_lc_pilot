@@ -23,7 +23,6 @@ Use `uv` for everything; do not hand-edit `uv.lock` or call `pip` directly.
 - `uv sync` — install/lock dependencies into the local `.venv`.
 - `uv run trans-lc-pilot "prompt"` — one-shot invocation of the agent.
 - `uv run trans-lc-pilot` — launch the interactive REPL.
-- `uv run trans-lc-pilot --model gpt-4o "hi"` — override `OPENAI_MODEL` for one run.
 - `cp .env.example .env` then fill `OPENAI_API_KEY` before first run.
 
 There is no test runner wired up yet; see *Testing Guidelines* below.
