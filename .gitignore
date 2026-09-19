@@ -3,6 +3,8 @@ __pycache__/
 *.egg-info/
 .venv/
 .env
+.env.deepseek
+.env.minmax
 dist/
 build/
 .pytest_cache/
