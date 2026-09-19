@@ -15,6 +15,8 @@ from pathlib import Path
 
 from .model import DocProj
 
+TMP_DIR = Path(__file__).resolve().parents[3] / ".tmp"
+
 
 def _browser_command() -> list[str] | None:
     """Return the platform's "open this file" command prefix.
@@ -38,8 +40,12 @@ def _browser_command() -> list[str] | None:
 def write_html(proj: DocProj) -> Path:
     """Render ``proj`` to HTML and write it to a fresh temp file.
 
-    The file is intentionally not cleaned up: a browser may still be
-    loading it after the process that wrote it has moved on.
+    Files land in ``<repo>/.tmp/`` rather than the system tempdir so
+    that snap-packaged browsers (Firefox, Chromium) — whose
+    confinement refuses access to ``/tmp`` — can read the file. The
+    directory is created on demand and ``.tmp/`` is in ``.gitignore``.
+    Files are intentionally not cleaned up: a browser may still be
+    loading them after the process that wrote them has moved on.
 
     Args:
         proj: The projection to render.
@@ -47,7 +53,8 @@ def write_html(proj: DocProj) -> Path:
     Returns:
         Path: Path of the written HTML file.
     """
-    fd, name = tempfile.mkstemp(prefix="docproj-", suffix=".html")
+    TMP_DIR.mkdir(exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix="docproj-", suffix=".html", dir=TMP_DIR)
     os.close(fd)
     path = Path(name)
     path.write_text(proj.render("html"), encoding="utf-8")
