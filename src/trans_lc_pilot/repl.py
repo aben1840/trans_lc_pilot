@@ -27,6 +27,9 @@ Commands:
   /render html --quiet       Same, without opening the browser.
   /render mammoth            Re-render the source via mammoth; opens by default.
   /render mammoth --quiet    Same, without opening the browser.
+  /split                     Split the source into one HTML file per heading.
+  /split --level N           Split at heading level N (default 1).
+  /split --quiet             Write the files without opening the index.
   /help                      Show this message.
   /quit                      Exit the REPL (Ctrl-D / Ctrl-C also work).
 Any other line is sent to the agent as a prompt.
@@ -160,6 +163,66 @@ def _cmd_render(session: Session, rest: list[str]) -> None:
         print(f"error: unsupported format {fmt!r}; available: html, mammoth")
 
 
+def _parse_split_args(rest: list[str]) -> tuple[int, bool] | None:
+    """Parse the arguments of ``/split``.
+
+    Args:
+        rest: Arguments after ``/split``.
+
+    Returns:
+        tuple[int, bool] | None: ``(level, quiet)``, or ``None`` after
+        printing an error for an unknown or malformed flag.
+    """
+    level = 1
+    quiet = False
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "--quiet":
+            quiet = True
+            index += 1
+        elif token == "--level":
+            if index + 1 >= len(rest):
+                print("error: --level requires a value (1-6)")
+                return None
+            value = rest[index + 1]
+            if not value.isdigit() or not 1 <= int(value) <= 6:
+                print(f"error: --level must be 1-6, got {value!r}")
+                return None
+            level = int(value)
+            index += 2
+        else:
+            print(f"error: unknown flag {token!r}; available: --level N, --quiet")
+            return None
+    return level, quiet
+
+
+def _cmd_split(session: Session, rest: list[str]) -> None:
+    """Split the loaded document into one HTML file per heading.
+
+    Args:
+        session: Current REPL session.
+        rest: Arguments after ``/split``; ``[--level N] [--quiet]``.
+    """
+    if session.proj is None:
+        print("error: no document loaded (use /docproj FILE)")
+        return
+
+    parsed = _parse_split_args(rest)
+    if parsed is None:
+        return
+    level, quiet = parsed
+
+    try:
+        index_path = present.write_articles(session.proj, level=level)
+    except (FileNotFoundError, OSError) as exc:
+        print(f"error: {exc}")
+        return
+    print(f"index: {index_path}")
+    if not quiet:
+        print(present.open_in_browser(index_path))
+
+
 def _handle_command(session: Session, line: str) -> bool:
     """Run a ``/``-prefixed command.
 
@@ -180,6 +243,8 @@ def _handle_command(session: Session, line: str) -> bool:
         _cmd_docproj(session, rest)
     elif command == "/render":
         _cmd_render(session, rest)
+    elif command == "/split":
+        _cmd_split(session, rest)
     else:
         print(f"unknown command: {command!r} (try '/help')")
     return True

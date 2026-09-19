@@ -14,14 +14,16 @@ Typical usage::
 """
 from __future__ import annotations
 
-from . import present
+from . import present, split
 from .model import RENDERERS, Block, DocProj, Renderer, register_renderer
 from .readers import READERS, Reader, read, register_reader
 from .render import render_html, render_json, render_markdown
+from .split import Article, split_by_headings
 
 __all__ = [
     "READERS",
     "RENDERERS",
+    "Article",
     "Block",
     "DocProj",
     "Reader",
@@ -33,4 +35,6 @@ __all__ = [
     "render_html",
     "render_json",
     "render_markdown",
+    "split",
+    "split_by_headings",
 ]

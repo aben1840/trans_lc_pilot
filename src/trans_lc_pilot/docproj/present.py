@@ -7,15 +7,18 @@ than in the REPL lets them be reused as agent tools later.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+from html import escape
 from pathlib import Path
 
 import mammoth
 
 from .model import DocProj
+from .split import Article, split_by_headings
 
 TMP_DIR = Path(__file__).resolve().parents[3] / ".tmp"
 
@@ -101,18 +104,41 @@ def _wrap_as_document(fragment: str, title: str) -> str:
     )
 
 
+def source_fragment(proj: DocProj) -> str:
+    """Run mammoth over the source docx and return the HTML fragment.
+
+    Empty paragraphs are preserved (``ignore_empty_paragraphs=False``)
+    so blank lines in the source survive the conversion. Callers that
+    need a standalone page should pass the result through
+    :func:`_wrap_as_document`.
+
+    mammoth is re-run on each call rather than cached in ``DocProj``
+    metadata: it is cheap, and caching would inflate every projection
+    with HTML that most callers never ask for.
+
+    Args:
+        proj: The projection whose source file is to be converted.
+
+    Returns:
+        str: HTML fragment, with no ``<html>`` or ``<body>`` wrapper.
+
+    Raises:
+        FileNotFoundError: If ``proj.source_path`` is no longer there.
+        OSError: On read failure.
+    """
+    with proj.source_path.open("rb") as f:
+        result = mammoth.convert_to_html(f, ignore_empty_paragraphs=False)
+    return result.value
+
+
 def write_source_html(proj: DocProj) -> Path:
     """Convert ``proj``'s source file to HTML via mammoth and write it.
 
     Differs from :func:`write_html`: the output is the raw HTML mammoth
     generates from the docx — the document as a reader sees it — rather
-    than a tabular view of the parsed :class:`DocProj`. Re-runs mammoth
-    each time (it is cheap, and caching the string into ``DocProj``
-    metadata would inflate every projection with HTML that most callers
-    never ask for).
+    than a tabular view of the parsed :class:`DocProj`.
 
-    The output preserves empty paragraphs (``ignore_empty_paragraphs=False``)
-    and wraps the fragment in a standalone HTML document so that
+    The fragment is wrapped in a standalone HTML document so that
     preserved empty ``<p>`` elements actually render as blank lines.
 
     Args:
@@ -126,15 +152,106 @@ def write_source_html(proj: DocProj) -> Path:
         OSError: On I/O failure while reading or writing.
     """
     TMP_DIR.mkdir(exist_ok=True)
-    with proj.source_path.open("rb") as f:
-        result = mammoth.convert_to_html(f, ignore_empty_paragraphs=False)
-    html = _wrap_as_document(result.value, title=f"DocProj: {proj.source_path.name}")
+    html = _wrap_as_document(
+        source_fragment(proj), title=f"DocProj: {proj.source_path.name}"
+    )
 
     fd, name = tempfile.mkstemp(prefix="docproj-source-", suffix=".html", dir=TMP_DIR)
     os.close(fd)
     path = Path(name)
     path.write_text(html, encoding="utf-8")
     return path
+
+
+def _slug(title: str, limit: int = 30) -> str:
+    """Turn a heading into a filesystem-safe filename fragment.
+
+    Args:
+        title: Heading text.
+        limit: Maximum length of the result.
+
+    Returns:
+        str: Slashes, colons and whitespace replaced by ``-``; falls
+        back to ``"untitled"`` when nothing usable remains.
+    """
+    cleaned = re.sub(r'[<>:"/\\|?*\s]+', "-", title).strip("-")
+    return cleaned[:limit] or "untitled"
+
+
+def _article_filename(article: Article) -> str:
+    """Name the output file for one article.
+
+    Args:
+        article: The article to name.
+
+    Returns:
+        str: ``000-preamble.html`` for the preamble, otherwise
+        ``<number>-<slug>.html``.
+    """
+    if article.is_preamble:
+        name = "000-preamble.html"
+    else:
+        name = f"{article.number:03d}-{_slug(article.title)}.html"
+    return name
+
+
+def _write_index(out_dir: Path, articles: list[Article], proj: DocProj) -> Path:
+    """Write an index page linking every article.
+
+    Args:
+        out_dir: Directory holding the article files.
+        articles: Articles that were written.
+        proj: The projection the articles came from.
+
+    Returns:
+        Path: Path of the written index.
+    """
+    items: list[str] = []
+    for article in articles:
+        label = article.title or "preamble"
+        items.append(
+            f'<li><a href="{_article_filename(article)}">{escape(label)}</a></li>'
+        )
+    body = (
+        f"<h1>{escape(proj.source_path.name)}</h1>\n"
+        f"<p>{len(articles)} article(s) split at heading level.</p>\n"
+        "<ul>\n" + "\n".join(items) + "\n</ul>"
+    )
+    index = out_dir / "index.html"
+    index.write_text(
+        _wrap_as_document(body, title=f"Articles: {proj.source_path.name}"),
+        encoding="utf-8",
+    )
+    return index
+
+
+def write_articles(proj: DocProj, level: int = 1) -> Path:
+    """Split the source into one HTML file per article.
+
+    Each article is written into a fresh subdirectory of ``.tmp/`` so a
+    run's output stays together and does not mix with earlier renders.
+    An ``index.html`` links them.
+
+    Args:
+        proj: The projection whose source file is to be split.
+        level: Heading level to split on, 1-6.
+
+    Returns:
+        Path: Path of the index page.
+
+    Raises:
+        FileNotFoundError: If ``proj.source_path`` is no longer there.
+        OSError: On I/O failure while reading or writing.
+    """
+    TMP_DIR.mkdir(exist_ok=True)
+    articles = split_by_headings(source_fragment(proj), level=level)
+    out_dir = Path(tempfile.mkdtemp(prefix="articles-", dir=TMP_DIR))
+    for article in articles:
+        title = article.title or proj.source_path.name
+        (out_dir / _article_filename(article)).write_text(
+            _wrap_as_document(article.html, title=title), encoding="utf-8"
+        )
+    return _write_index(out_dir, articles, proj)
 
 
 def open_in_browser(path: Path) -> str:
