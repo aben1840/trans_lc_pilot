@@ -14,6 +14,7 @@ import sys
 import termios
 import tty
 from collections.abc import Callable
+from pathlib import Path
 
 from .agent import build_agent, run_once
 from .config import Settings
@@ -21,11 +22,13 @@ from .docproj import DocProj, present, read
 
 HELP = """\
 Commands:
-  /docproj FILE        Load a document for inspection.
-  /render html         Render the loaded projection to HTML in a temp file.
-  /render html --open  Same, then open it in the default browser.
-  /help                Show this message.
-  /quit                Exit the REPL (Ctrl-D / Ctrl-C also work).
+  /docproj FILE              Load a document for inspection.
+  /render html               Render the projection to HTML; opens by default.
+  /render html --quiet       Same, without opening the browser.
+  /render mammoth            Re-render the source via mammoth; opens by default.
+  /render mammoth --quiet    Same, without opening the browser.
+  /help                      Show this message.
+  /quit                      Exit the REPL (Ctrl-D / Ctrl-C also work).
 Any other line is sent to the agent as a prompt.
 """
 
@@ -98,25 +101,63 @@ def _cmd_docproj(session: Session, rest: list[str]) -> None:
             print(f"error: {exc}")
 
 
+def _write_and_maybe_open(
+    write: Callable[[DocProj], Path],
+    proj: DocProj,
+    open_after: bool,
+) -> None:
+    """Run ``write(proj)``, print the path, and optionally open in browser.
+
+    Any I/O or browser-launch error is printed and swallowed so the
+    REPL stays alive.
+
+    Args:
+        write: Callable that produces a file path from a projection.
+        proj: The projection to write.
+        open_after: Whether to launch the browser.
+    """
+    try:
+        path = write(proj)
+    except (FileNotFoundError, OSError) as exc:
+        print(f"error: {exc}")
+        return
+    print(f"written: {path}")
+    if open_after:
+        print(present.open_in_browser(path))
+
+
 def _cmd_render(session: Session, rest: list[str]) -> None:
     """Render the loaded projection.
 
+    Both ``html`` and ``mammoth`` open the result in the default browser
+    by default; ``--quiet`` suppresses the open in either case. Unknown
+    flags are rejected rather than ignored, so a typo cannot silently
+    select the opposite of the intended behaviour.
+
     Args:
         session: Current REPL session.
-        rest: Arguments after ``/render``; ``<format> [--open]``.
+        rest: Arguments after ``/render``; ``<format> [--quiet]``.
     """
     if session.proj is None:
         print("error: no document loaded (use /docproj FILE)")
+        return
+
+    fmt = rest[0] if rest else ""
+    flags = set(rest[1:])
+    unknown = sorted(flags - {"--quiet"})
+
+    if unknown:
+        print(f"error: unknown flag(s) {', '.join(unknown)}; available: --quiet")
+    elif fmt == "html":
+        _write_and_maybe_open(
+            present.write_html, session.proj, "--quiet" not in flags
+        )
+    elif fmt == "mammoth":
+        _write_and_maybe_open(
+            present.write_source_html, session.proj, "--quiet" not in flags
+        )
     else:
-        fmt = rest[0] if rest else ""
-        open_flag = "--open" in rest[1:]
-        if fmt == "html":
-            path = present.write_html(session.proj)
-            print(f"written: {path}")
-            if open_flag:
-                print(present.open_in_browser(path))
-        else:
-            print(f"error: unsupported format {fmt!r}; available: html")
+        print(f"error: unsupported format {fmt!r}; available: html, mammoth")
 
 
 def _handle_command(session: Session, line: str) -> bool:

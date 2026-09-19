@@ -13,6 +13,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import mammoth
+
 from .model import DocProj
 
 TMP_DIR = Path(__file__).resolve().parents[3] / ".tmp"
@@ -58,6 +60,80 @@ def write_html(proj: DocProj) -> Path:
     os.close(fd)
     path = Path(name)
     path.write_text(proj.render("html"), encoding="utf-8")
+    return path
+
+
+_EMPTY_P_MARGIN_CSS = """\
+<style>
+  /* Empty <p> elements (preserved from the source docx) collapse to
+     zero height by default; force them to take a full line. */
+  p:empty { margin: 1em 0; }
+</style>
+"""
+
+
+def _wrap_as_document(fragment: str, title: str) -> str:
+    """Wrap a mammoth HTML fragment in a minimal standalone document.
+
+    Adds ``<!doctype>``, ``<html>``, ``<head>`` with a title and the
+    empty-paragraph CSS, and the fragment body. Returns the full
+    document as a string.
+
+    Args:
+        fragment: HTML fragment from mammoth (no doctype).
+        title: Title for the document.
+
+    Returns:
+        str: Complete HTML document.
+    """
+    return (
+        "<!doctype html>\n"
+        '<html lang="en">\n'
+        "<head>\n"
+        '<meta charset="utf-8">\n'
+        f"<title>{title}</title>\n"
+        f"{_EMPTY_P_MARGIN_CSS}"
+        "</head>\n"
+        "<body>\n"
+        f"{fragment}\n"
+        "</body>\n"
+        "</html>\n"
+    )
+
+
+def write_source_html(proj: DocProj) -> Path:
+    """Convert ``proj``'s source file to HTML via mammoth and write it.
+
+    Differs from :func:`write_html`: the output is the raw HTML mammoth
+    generates from the docx — the document as a reader sees it — rather
+    than a tabular view of the parsed :class:`DocProj`. Re-runs mammoth
+    each time (it is cheap, and caching the string into ``DocProj``
+    metadata would inflate every projection with HTML that most callers
+    never ask for).
+
+    The output preserves empty paragraphs (``ignore_empty_paragraphs=False``)
+    and wraps the fragment in a standalone HTML document so that
+    preserved empty ``<p>`` elements actually render as blank lines.
+
+    Args:
+        proj: The projection whose source file is to be re-rendered.
+
+    Returns:
+        Path: Path of the written HTML file.
+
+    Raises:
+        FileNotFoundError: If ``proj.source_path`` is no longer there.
+        OSError: On I/O failure while reading or writing.
+    """
+    TMP_DIR.mkdir(exist_ok=True)
+    with proj.source_path.open("rb") as f:
+        result = mammoth.convert_to_html(f, ignore_empty_paragraphs=False)
+    html = _wrap_as_document(result.value, title=f"DocProj: {proj.source_path.name}")
+
+    fd, name = tempfile.mkstemp(prefix="docproj-source-", suffix=".html", dir=TMP_DIR)
+    os.close(fd)
+    path = Path(name)
+    path.write_text(html, encoding="utf-8")
     return path
 
 
