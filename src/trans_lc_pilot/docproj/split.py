@@ -76,6 +76,38 @@ def split_by_headings(fragment: str, level: int = 1) -> list[Article]:
     return articles
 
 
+def heading_counts(fragment: str) -> dict[int, int]:
+    """Count top-level headings by level in an HTML fragment.
+
+    Applies the same node rules as :func:`split_by_headings`, so the
+    counts predict exactly what a split at each level would do. In
+    particular a heading nested inside a ``<div>`` or a table is not
+    counted, because it is not a split boundary either.
+
+    Use this to choose a level before splitting: reporting the levels a
+    document actually has is what lets a caller decide, rather than
+    guessing.
+
+    Args:
+        fragment: HTML fragment, typically from mammoth.
+
+    Returns:
+        dict[int, int]: Heading level (1-6) mapped to how many
+        top-level headings of that level the fragment holds. Levels
+        with no headings are absent, so a document without headings
+        yields an empty dict.
+    """
+    soup = BeautifulSoup(fragment, "html.parser")
+    counts: dict[int, int] = {}
+    for node in soup.children:
+        if not _is_significant(node):
+            continue
+        level = _heading_level(node)
+        if level is not None:
+            counts[level] = counts.get(level, 0) + 1
+    return counts
+
+
 def _is_significant(node: object) -> bool:
     """Whether a top-level node carries content worth keeping.
 
@@ -90,6 +122,28 @@ def _is_significant(node: object) -> bool:
     """
     is_text = isinstance(node, NavigableString)
     return bool(str(node).strip()) if is_text else True
+
+
+_HEADING_TAGS = frozenset(f"h{level}" for level in range(1, 7))
+
+
+def _heading_level(node: object) -> int | None:
+    """Return the heading level of a node, or ``None`` when it is not one.
+
+    Deliberately separate from :func:`_is_heading`, which matches an
+    arbitrary tag name and so would also accept a stray ``<h7>``. That
+    path is unreachable through the REPL or the CLI — both validate the
+    level as 1-6 — and for those the two agree.
+
+    Args:
+        node: A child of the parsed fragment.
+
+    Returns:
+        int | None: ``1``-``6`` for ``<h1>``-``<h6>``, else ``None``.
+    """
+    if isinstance(node, Tag) and node.name in _HEADING_TAGS:
+        return int(node.name[1])
+    return None
 
 
 def _is_heading(node: object, target: str) -> bool:

@@ -18,7 +18,7 @@ from . import present, split
 from .model import RENDERERS, Block, DocProj, Renderer, register_renderer
 from .readers import READERS, Reader, read, register_reader
 from .render import render_html, render_json, render_markdown
-from .split import Article, split_by_headings
+from .split import Article, heading_counts, split_by_headings
 
 __all__ = [
     "READERS",
@@ -28,6 +28,7 @@ __all__ = [
     "DocProj",
     "Reader",
     "Renderer",
+    "heading_counts",
     "present",
     "read",
     "register_reader",
