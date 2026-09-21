@@ -27,6 +27,7 @@ packages = ["src/trans_lc_pilot"]
 dev = [
     "ruff>=0.6",
     "python-docx>=1.1",
+    "pillow>=10.0",
 ]
 
 [tool.ruff]
