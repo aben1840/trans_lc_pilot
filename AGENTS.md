@@ -1,6 +1,18 @@
 # 仓库指南
 
-`trans-lc-pilot` 是一个极简 LangChain tool-calling agent，通过小型 CLI 对外服务。保持改动精简、类型完备、以环境变量驱动。
+`trans-lc-pilot` 是一个 Workbuddy Expert Plugin：LangChain 驱动的文档处理专家，通过小型 CLI 对外服务。保持改动精简、类型完备、以环境变量驱动。
+
+## 项目分层
+
+```
+.codebuddy-plugin/plugin.json   ← Plugin manifest（Workbuddy 扫描入口）
+agents/<name>.md                ← Expert 人设 + system prompt（YAML frontmatter + Markdown）
+skills/<skill-name>/SKILL.md    ← 每个 skill 一个目录
+avatars/                        ← 专家头像（可选）
+src/trans_lc_pilot/             ← Python 引擎
+pyproject.toml                  ← 构建 + CLI 入口（[project.scripts]）
+AGENTS.md                       ← 本文档：开发协作指南
+```
 
 ## 协作约定
 
