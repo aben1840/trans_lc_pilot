@@ -1,7 +1,7 @@
 {
   "name": "trans-lc-pilot",
   "version": "0.1.0",
-  "description": "LangChain-based document processing expert: split translate and assemble docx files",
+  "description": "LangChain-powered professional translation expert: split translate and assemble docx files",
   "expertType": "agent",
   "agentName": "trans-lc-pilot",
   "agents": [
@@ -11,16 +11,16 @@
     "./skills/split-docx"
   ],
   "displayName": {
-    "zh": "文档处理助手",
-    "en": "Doc Pilot"
+    "zh": "翻译助手",
+    "en": "TransPilot"
   },
   "profession": {
-    "zh": "文档处理专家",
-    "en": "Document Processing Expert"
+    "zh": "专业翻译",
+    "en": "Professional Translation"
   },
   "displayDescription": {
-    "zh": "基于 LangChain 的文档处理专家，支持 docx 拆分、翻译、合并等操作",
-    "en": "LangChain-powered document processing: split translate and assemble Word documents"
+    "zh": "基于 LangChain 的专业翻译专家，支持 docx 拆分、翻译、合并等操作",
+    "en": "LangChain-powered professional translation: split translate and assemble Word documents"
   },
   "avatar": "avatars/expert.png"
 }
