@@ -17,6 +17,14 @@ style, prior decisions, `git log`); ask only about genuine forks in the road.
 When a decision cannot wait, make it visible in the response: say what was
 chosen, what the alternatives were, and what changing course later would cost.
 
+## Skills
+
+项目的 skills 存放在 `skills/<skill-name>/SKILL.md`，与任何特定 agent 的目录约定无关。每个 skill 描述一项可用能力、适用场景、执行步骤和注意事项。当前提供：
+
+- **split-docx** — 按标题拆分 docx 为多个 HTML，附带索引页
+
+新增 skill 时，在 `skills/` 下新建 kebab-case 目录，内含一份 `SKILL.md`（YAML frontmatter + Markdown 正文），然后更新本节清单。
+
 ## Project Structure & Module Organization
 
 The project follows a `src/`-layout Python package. All application code lives
