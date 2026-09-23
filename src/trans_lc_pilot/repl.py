@@ -11,10 +11,15 @@ document can be loaded and rendered without ``OPENAI_API_KEY``.
 from __future__ import annotations
 
 import sys
-import termios
-import tty
 from collections.abc import Callable
 from pathlib import Path
+
+try:  # POSIX only: Windows provides neither module.
+    import termios
+    import tty
+except ImportError:  # pragma: no cover - non-POSIX platforms
+    termios = None
+    tty = None
 
 from .agent import build_agent, run_once
 from .config import Settings
@@ -255,15 +260,17 @@ def _enable_utf8_line_editing() -> None:
 
     Without it the kernel's line discipline deletes one byte at a time,
     leaving orphan continuation bytes so wide CJK characters appear to
-    "half-delete".
+    "half-delete". Does nothing on platforms without ``termios``
+    (Windows), where the concern does not arise.
     """
-    if sys.stdin.isatty():
-        try:
-            attrs = termios.tcgetattr(sys.stdin.fileno())
-            attrs[0] |= tty.IUTF8
-            termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, attrs)
-        except (termios.error, AttributeError, OSError):
-            pass
+    if termios is None or not sys.stdin.isatty():
+        return
+    try:
+        attrs = termios.tcgetattr(sys.stdin.fileno())
+        attrs[0] |= tty.IUTF8
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, attrs)
+    except (termios.error, AttributeError, OSError):
+        pass
 
 
 def run(

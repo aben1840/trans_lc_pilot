@@ -11,7 +11,7 @@
     "./skills/split-docx"
   ],
   "displayName": {
-    "zh": "翻译助手",
+    "zh": "TransPilot 翻译助手",
     "en": "TransPilot"
   },
   "profession": {
@@ -22,5 +22,38 @@
     "zh": "基于 LangChain 的专业翻译专家，支持 docx 拆分、翻译、合并等操作",
     "en": "LangChain-powered professional translation: split translate and assemble Word documents"
   },
-  "avatar": "avatars/expert.png"
+  "avatar": "avatars/expert.png",
+  "categoryId": "06-ContentCreative",
+  "defaultInitPrompt": {
+    "zh": "请帮我翻译这份 Word 文档，先看看有多少标题级别适合拆分。",
+    "en": "Please help me translate this Word document. First check how many heading levels are suitable for splitting."
+  },
+  "tags": [
+    {
+      "zh": "文档翻译",
+      "en": "Document Translation"
+    },
+    {
+      "zh": "Word 处理",
+      "en": "Word Processing"
+    },
+    {
+      "zh": "文档拆分",
+      "en": "Document Splitting"
+    }
+  ],
+  "quickPrompts": [
+    {
+      "zh": "帮我看看这份 docx 有哪些标题级别",
+      "en": "Show me the heading levels in this docx file"
+    },
+    {
+      "zh": "按一级标题拆分这份文档",
+      "en": "Split this document by level 1 headings"
+    },
+    {
+      "zh": "把这份 Word 转换成 HTML 不拆分",
+      "en": "Convert this Word to HTML without splitting"
+    }
+  ]
 }

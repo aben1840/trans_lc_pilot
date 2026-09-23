@@ -1,4 +1,5 @@
 ---
+name: split-docx
 description: 将 .docx 文件按标题拆分为多个 HTML 文件，并生成一个索引页。当用户要求 分割、拆分 docx、按标题拆成几篇，或 "split this docx by headings" / "break this document into articles" 时使用。
 allowed-tools: Bash(uv run trans-lc-pilot *)
 ---
