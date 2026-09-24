@@ -6,19 +6,15 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from .config import Settings
+from .prompt import SYSTEM_PROMPT
 from .tools import default_tools
-
-SYSTEM_PROMPT = (
-    "You are a concise assistant. Answer directly. "
-    "Use tools only when they clearly help."
-)
 
 
 def build_llm(settings: Settings) -> BaseChatModel:
     """Construct the chat model used by the agent.
 
     Args:
-        settings: Resolved :class:`~trans_lc_pilot.config.Settings`
+        settings: Resolved :class:`~trans_lc_pilot.langchain_agent.config.Settings`
             providing the API key, model name, and optional base URL.
 
     Returns:
@@ -43,7 +39,7 @@ def build_agent(settings: Settings):
     """Build a LangChain tool-calling agent from settings.
 
     Args:
-        settings: Resolved :class:`~trans_lc_pilot.config.Settings`
+        settings: Resolved :class:`~trans_lc_pilot.langchain_agent.config.Settings`
             driving model selection, credentials, and the default tool
             set.
 

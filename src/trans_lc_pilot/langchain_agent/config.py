@@ -11,13 +11,13 @@ load_dotenv()
 
 @dataclass(frozen=True)
 class Settings:
-    """Runtime configuration for the OpenAI-backed agent.
+    """Runtime configuration for the LangChain agent.
 
     Attributes:
         openai_api_key: OpenAI API key. ``None`` when ``OPENAI_API_KEY``
             is unset in the environment; required at runtime by
-            :func:`trans_lc_pilot.agent.build_llm`, which raises
-            :class:`ValueError` if it is missing.
+            :func:`trans_lc_pilot.langchain_agent.agent.build_llm`,
+            which raises :class:`ValueError` if it is missing.
         openai_model: Chat model name. Falls back to ``"gpt-4o-mini"``
             when ``OPENAI_MODEL`` is unset in the environment.
         openai_base_url: Optional base URL for a compatible OpenAI-style

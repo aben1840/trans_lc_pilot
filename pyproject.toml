@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 trans-lc-pilot = "trans_lc_pilot.cli:main"
+trans-lc-pilot-agent = "trans_lc_pilot.langchain_agent.entry:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -59,4 +60,5 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "src/trans_lc_pilot/__init__.py" = ["D104"]
+"src/trans_lc_pilot/langchain_agent/prompt.py" = ["E501"]
 "tests/**" = ["D"]

@@ -1,36 +1,34 @@
-"""Command-line entry: one-shot prompt or the interactive REPL."""
+"""Command-line entry: docx processing only.
+
+Document actions are mutually exclusive options. All LLM-driven agent
+behaviour lives on ``trans-lc-pilot-agent`` (see
+:mod:`trans_lc_pilot.langchain_agent.entry`).
+"""
 from __future__ import annotations
 
 import argparse
 import sys
 import traceback
 
-from . import repl
-from .agent import build_agent, run_once
-from .config import load_settings
 from .docproj import DocProj, heading_counts, present, read, split_by_headings
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     """Parse command-line arguments.
 
-    Document actions are options rather than subcommands on purpose: the
-    ``prompt`` positional is free-form, so ``trans-lc-pilot split x.docx``
-    would be indistinguishable from a prompt that starts with the word
-    "split". An option keeps the prompt path untouched.
+    Document actions are options rather than subcommands so a caller
+    can invoke any one of them directly.
 
     Args:
         argv: Argument vector excluding the program name; typically
             ``sys.argv[1:]``.
 
     Returns:
-        argparse.Namespace: Parsed arguments. ``prompt`` is a list of
-        strings (empty when omitted, in which case ``main`` enters
-        REPL mode unless a document action was given).
+        argparse.Namespace: Parsed arguments. Exactly one of
+        ``list_levels``, ``convert``, or ``split`` is set.
     """
     parser = argparse.ArgumentParser(prog="trans-lc-pilot")
-    parser.add_argument("prompt", nargs="*", help="Prompt text; omit for REPL.")
-    action = parser.add_mutually_exclusive_group()
+    action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument(
         "--list-levels",
         metavar="FILE",
@@ -60,54 +58,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _run_oneshot(prompt: str) -> int:
-    """Send one prompt to the agent, print the reply, and finish.
-
-    Args:
-        prompt: Natural-language prompt.
-
-    Returns:
-        int: ``0`` on success; failures propagate to :func:`main`.
-    """
-    print(run_once(build_agent(load_settings()), prompt))
-    return 0
-
-
-def _run_interactive() -> int:
-    """Enter the interactive REPL.
-
-    Returns:
-        int: Exit code from the REPL loop.
-    """
-    return repl.run(load_settings())
-
-
-def _dispatch(argv: list[str]) -> int:
-    """Route an argument vector to a document action, one-shot, or REPL.
-
-    Args:
-        argv: Argument vector excluding the program name.
-
-    Returns:
-        int: ``0`` on success; ``1`` when the arguments do not fit the
-        mode they selected.
-    """
-    args = parse_args(argv)
-    if not args.split and args.level is not None:
-        print("error: --level requires --split", file=sys.stderr)
-        return 1
-    elif not (args.convert or args.split) and args.quiet:
-        print("error: --quiet requires --convert or --split", file=sys.stderr)
-        return 1
-    if args.list_levels or args.convert or args.split:
-        return _run_document_action(args)
-    if args.prompt:
-        exit_code = _run_oneshot(" ".join(args.prompt))
-    else:
-        exit_code = _run_interactive()
-    return exit_code
-
-
 def _run_document_action(args: argparse.Namespace) -> int:
     """Run ``--list-levels``, ``--convert`` or ``--split`` against one file.
 
@@ -119,12 +69,11 @@ def _run_document_action(args: argparse.Namespace) -> int:
         failures are printed without a traceback; anything else
         propagates to :func:`main`.
     """
-    if args.prompt:
-        joined = " ".join(args.prompt)
-        print(
-            f"error: document actions take no prompt, got {joined!r}",
-            file=sys.stderr,
-        )
+    if not args.split and args.level is not None:
+        print("error: --level requires --split", file=sys.stderr)
+        return 1
+    if not (args.convert or args.split) and args.quiet:
+        print("error: --quiet requires --convert or --split", file=sys.stderr)
         return 1
 
     path = args.list_levels or args.convert or args.split
@@ -214,15 +163,15 @@ def _split_document(proj: DocProj, level: int, open_after: bool) -> int:
         int: ``0`` on success.
     """
     fragment = present.source_fragment(proj)
-    articles = split_by_headings(fragment, level=level)
+    art_list = split_by_headings(fragment, level=level)
     index_path = present.write_articles(proj, level=level)
 
     print(f"source: {proj.source_path}")
     print(f"level: {level}")
-    print(f"articles: {len(articles)}")
-    if any(article.is_preamble for article in articles):
+    print(f"articles: {len(art_list)}")
+    if any(article.is_preamble for article in art_list):
         print("preamble: yes (content before the first heading)")
-    if len(articles) == 1 and not articles[0].title:
+    if len(art_list) == 1 and not art_list[0].title:
         print(f"note: no heading at level {level}; document left whole")
     print("heading levels in document:")
     _print_levels(heading_counts(fragment))
@@ -235,30 +184,23 @@ def _split_document(proj: DocProj, level: int, open_after: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``trans-lc-pilot`` console script.
 
-    Ways in:
+    Document-only operations::
 
-    * ``trans-lc-pilot`` — interactive REPL.
-    * ``trans-lc-pilot "prompt"`` — one-shot agent call.
-    * ``trans-lc-pilot --list-levels FILE`` — print FILE's heading
-      levels and exit, writing nothing.
-    * ``trans-lc-pilot --convert FILE [--quiet]`` — convert FILE to
-      HTML via mammoth and open it, unless ``--quiet``.
-    * ``trans-lc-pilot --split FILE [--level N] [--quiet]`` — split
-      FILE into one HTML file per heading under ``<repo>/.tmp/``, and
-      open the index page unless ``--quiet``.
+        trans-lc-pilot --list-levels FILE
+        trans-lc-pilot --convert FILE [--quiet]
+        trans-lc-pilot --split FILE [--level N] [--quiet]
 
     Args:
         argv: Optional argument vector excluding the program name;
             defaults to ``sys.argv[1:]`` when ``None``.
 
     Returns:
-        int: Exit code; ``0`` for a clean run or REPL exit
-        (``Ctrl-D`` / ``Ctrl-C``), ``1`` when an exception is caught
-        and reported to ``stderr``.
+        int: Exit code; ``0`` on success, ``1`` on failure.
     """
     argv = list(argv if argv is not None else sys.argv[1:])
     try:
-        exit_code = _dispatch(argv)
+        args = parse_args(argv)
+        exit_code = _run_document_action(args)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
