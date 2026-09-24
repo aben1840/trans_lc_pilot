@@ -18,6 +18,7 @@ subclasses are mutable because translation edits text in place.
 """
 from __future__ import annotations
 
+from abc import ABC
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -78,12 +79,16 @@ class Cell:
 
 
 @dataclass
-class Block:
-    """Base class for all block types.
+class Block(ABC):
+    """Abstract base for all block types.
 
     Holds only the fields common to every block subtype. The ``kind``
     attribute is set by each subclass as a fixed string — consumers
     should prefer ``isinstance`` checks over string comparison.
+
+    ``Block`` itself cannot be instantiated. Use one of the concrete
+    subclasses: :class:`ParagraphBlock`, :class:`HeadingBlock`,
+    :class:`TableBlock`, or :class:`ImageBlock`.
 
     Attributes:
         idx: Zero-based position in :attr:`DocProj.blocks`.
@@ -113,6 +118,15 @@ class Block:
     bbox: tuple[float, float, float, float] | None = None
     kind_confidence: float = 1.0
     signals: list[str] = field(default_factory=list)
+
+    def __new__(cls, *args, **kwargs):
+        """Prevents direct instantiation of the abstract base."""
+        if cls is Block:
+            raise TypeError(
+                "Block is abstract — instantiate ParagraphBlock, "
+                "HeadingBlock, TableBlock, or ImageBlock instead"
+            )
+        return super().__new__(cls)
 
 
 @dataclass
