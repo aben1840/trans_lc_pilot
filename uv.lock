@@ -1186,12 +1186,12 @@ dependencies = [
     { name = "langchain-core" },
     { name = "langchain-openai" },
     { name = "mammoth" },
+    { name = "python-docx" },
     { name = "python-dotenv" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "python-docx" },
     { name = "ruff" },
 ]
 
@@ -1202,14 +1202,12 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=0.3" },
     { name = "langchain-openai", specifier = ">=0.3" },
     { name = "mammoth", specifier = ">=1.8" },
+    { name = "python-docx", specifier = ">=1.2.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "python-docx", specifier = ">=1.1" },
-    { name = "ruff", specifier = ">=0.6" },
-]
+dev = [{ name = "ruff", specifier = ">=0.6" }]
 
 [[package]]
 name = "truststore"
