@@ -20,7 +20,6 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 如果仓库本身已经有答案（现有风格、之前的决策、`git log`），直接据此回答；只在真正面临岔路口时才提问。
 
-当决策不能等时，在回复中显式说明：选了什么、有哪些备选、日后改回来需要付出什么代价。
 
 ## Skills
 
@@ -32,12 +31,13 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 ## 项目结构与模块组织
 
-项目采用 `src/` 布局的 Python 包。所有应用代码位于 `src/trans_lc_pilot/` 下：
+项目采用 `src/` 布局的 Python 包。所有应用代码位于 `src/trans_lc_pilot/` 下，分为两个平行消费侧和一个共享能力内核：
 
-- `config.py` — 冻结的 `Settings` dataclass，通过 `python-dotenv` 从 `.env` 加载。
-- `tools.py` — `@tool` 定义以及 `default_tools()` 注册表。
-- `agent.py` — `build_llm`、`build_agent` 和 `run_once`；持有 system prompt。
-- `cli.py` — argparse 入口和 REPL 循环（脚本名：`trans-lc-pilot`）。
+- `docproj/` — 文档处理内核。`DocProj` 数据模型、`readers/`（docx 等格式解析）、`split.py`（按标题拆分）、`present.py`（写入 HTML、打开浏览器）。两侧共用，**不依赖** LangChain。
+- `cli.py` — docx 专用 argparse 入口（`trans-lc-pilot` 脚本）。只处理 `--list-levels`、`--convert`、`--split` 三个分支，**无 LLM 依赖**。
+- `langchain_agent/` — 独立 LangChain agent 运行时（`trans-lc-pilot-agent` 脚本）。自包含：`config.py`（Settings + load_settings）、`prompt.py`（system prompt）、`tools.py`（`@tool` 注册）、`agent.py`（build_llm / build_agent / run_once）、`repl.py`（交互式 REPL）、`entry.py`（独立 CLI 入口）。
+
+两个入口平行消费 `docproj/`，互相**无反向依赖**。
 
 顶层文件：`pyproject.toml`（Hatchling 构建、项目元数据、脚本入口点）、`uv.lock`（锁定的依赖）、`README.md`、`.env.example`、`.gitignore`。
 
@@ -46,9 +46,11 @@ AGENTS.md                       ← 本文档：开发协作指南
 一切用 `uv`；不要手工编辑 `uv.lock` 或直接调用 `pip`。
 
 - `uv sync` — 将依赖安装/锁定到本地 `.venv`。
-- `uv run trans-lc-pilot "prompt"` — 一次性调用 agent。
-- `uv run trans-lc-pilot` — 启动交互式 REPL。
-- 首次运行前：`cp .env.example .env`，然后填写 `OPENAI_API_KEY`。
+- `uv run trans-lc-pilot --list-levels FILE` — 报告标题级别，只读不写。
+- `uv run trans-lc-pilot --split FILE --level N` — 按标题拆分 docx，无 LLM 依赖。
+- `uv run trans-lc-pilot-agent "prompt"` — 一次性调用 LangChain agent（需 API key）。
+- `uv run trans-lc-pilot-agent` — 启动 LangChain agent 交互式 REPL（需 API key）。
+- 只有 `trans-lc-pilot-agent` 需要环境变量：`cp .env.example .env`，填写 `OPENAI_API_KEY`。`trans-lc-pilot` 的 docx 操作不需要 `.env`。
 
 目前尚未接入测试运行器；见下方*测试指南*。
 
@@ -56,8 +58,7 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 - Python ≥ 3.12。每个模块以 `from __future__ import annotations` 开头。
 - 所有公开函数和 dataclass 字段都要有类型注解；优先使用现代语法（`str | None`、`list[str]`）。
-- 模块、函数、变量用 `snake_case`；类用 `PascalCase`（如 `Settings`）。模块文件名用简短名词（`agent.py`、`tools.py`）。
-- 函数尽量短小且保持纯函数性质；副作用集中在 `cli.py`。
+- 模块、函数、变量用 `snake_case`；类用 `PascalCase`（如 `Settings`）。模块文件名用简短名词（`cli.py`、`entry.py`）。
 - 分支用 `if … elif … else` 链表达。
   - 优先这样写：
 
@@ -87,7 +88,7 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 ## 测试指南
 
-目前还没有提交测试。添加时放在 `tests/` 下，镜像 `src/trans_lc_pilot/` 的目录结构（如 `tests/test_tools.py`），使用 `pytest`。测试命名 `test_<unit>_<behavior>`，并保持封闭——mock 掉 LLM，绝不要用真实 API key 联网。运行方式：`uv run pytest`。
+目前还没有提交测试。添加时放在 `tests/` 下，镜像 `src/trans_lc_pilot/` 的目录结构（如 `tests/langchain_agent/test_tools.py`），使用 `pytest`。测试命名 `test_<unit>_<behavior>`，并保持封闭——mock 掉 LLM，绝不要用真实 API key 联网。运行方式：`uv run pytest`。
 
 ## 提交与 Pull Request 规范
 
@@ -97,5 +98,5 @@ AGENTS.md                       ← 本文档：开发协作指南
 ## 安全与配置提示
 
 - 绝不提交 `.env`；它已被 git 忽略。只有 `.env.example` 属于仓库。
-- 运行时需要 `OPENAI_API_KEY` —— 缺失时 `build_llm` 会抛出异常。
+- `trans-lc-pilot-agent` 运行时需要 `OPENAI_API_KEY` —— 缺失时 `langchain_agent/agent.py` 中的 `build_llm` 会抛出异常。`trans-lc-pilot` 的 docx 操作不需要。
 - `OPENAI_BASE_URL` 可指向兼容的本地或托管端点；留空则使用 OpenAI。
