@@ -3,6 +3,17 @@
 The canonical data lives in :class:`DocProj` (a dataclass). HTML is the
 first concrete rendering; Markdown and JSON are reserved for future
 steps and currently raise :class:`NotImplementedError`.
+
+Format fidelity lives at three levels:
+
+* **Block** — coarse structure (heading / paragraph / table / image)
+* **Span**  — run-level inline formatting inside a block
+* **Cell**  — table cell with its own spans
+
+All three are dataclasses with optional fields; omitting them is the
+normal path for readers that cannot extract the detail (e.g. PDF
+readers infer bold from fontname heuristics, plain-text readers leave
+spans as ``None``).
 """
 from __future__ import annotations
 
@@ -11,14 +22,76 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+@dataclass(frozen=True)
+class Span:
+    """A run-level inline fragment with its formatting.
+
+    Invariant across the containing :class:`Block`:
+    ``"".join(s.text for s in block.spans) == block.text``.
+
+    Format attributes that are ``False`` / ``None`` mean "not set" —
+    the value falls back to whatever enclosing style the reader did or
+    did not capture.
+    """
+
+    text: str
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    font_name: str | None = None
+    font_size_pt: float | None = None
+    color_rgb: str | None = None
+
+    @property
+    def is_plain(self) -> bool:
+        """Whether this span carries no explicit formatting."""
+        return not any(
+            [
+                self.bold,
+                self.italic,
+                self.underline,
+                self.font_name is not None,
+                self.font_size_pt is not None,
+                self.color_rgb is not None,
+            ]
+        )
+
+
+@dataclass(frozen=True)
+class Cell:
+    """A single table cell.
+
+    A cell carries its inline spans — the writer is responsible for
+    turning them back into the output format's cell structure.
+    """
+
+    spans: tuple[Span, ...]
+    row_span: int = 1
+    col_span: int = 1
+
+    @property
+    def text(self) -> str:
+        """Concatenated plain text of the cell."""
+        return "".join(s.text for s in self.spans)
+
+
 @dataclass
 class Block:
     """A single block in the document.
 
     Blocks cover the coarse-grained elements a downstream split-decision
     needs: headings, paragraphs, tables, and images. Run-level formatting
-    is intentionally not modeled — DocProj is a *projection*, not a full
-    document tree.
+    lives in :class:`Span` (attached via the optional ``spans`` field),
+    table structure lives in ``rows`` (a 2-D grid of :class:`Cell`).
+
+    ``spans``, ``rows``, and the paragraph-level attributes (``align``,
+    indents, spacing) are all optional. Readers that cannot extract them
+    (e.g. a plain-text reader) simply leave them ``None`` and consumers
+    must tolerate that.
+
+    ``docx_para_idx`` is set only by the python-docx reader and lets a
+    writer locate the original OOXML paragraph for a backfill edit. PDF
+    readers (and future formats) always leave it ``None``.
 
     Attributes:
         idx: Zero-based position in :attr:`DocProj.blocks`.
@@ -26,10 +99,24 @@ class Block:
             ``"image"``.
         level: Heading level (1-6) when ``kind == "heading"``; ``None``
             otherwise.
-        style_hint: Reader-supplied style label (e.g. ``"h1"``,
-            ``"title"``, ``"body"``). ``None`` when not applicable.
+        style_hint: Reader-supplied style label (e.g. ``"Heading 2"``,
+            ``"Normal"``). ``None`` when not applicable.
         text: Plain-text content of the block (concatenated for tables).
-            Empty string when not applicable (e.g. for bare images).
+            Empty string when not applicable (e.g. bare images).
+        spans: Run-level inline formatting. Must be consistent with
+            ``text``. ``None`` when the reader did not capture it.
+        align: Paragraph alignment — ``"left"``, ``"center"``,
+            ``"right"``, ``"justify"`` — or ``None`` when unknown.
+        indent_first_line_pt: First-line indent in pt, or ``None``.
+        line_spacing: Line-spacing factor (e.g. ``2.0`` for double), or
+            ``None`` when not set.
+        space_before_pt: Space before the paragraph in pt, or ``None``.
+        space_after_pt: Space after the paragraph in pt, or ``None``.
+        rows: Table structure, a 2-D list of :class:`Cell`. Only set when
+            ``kind == "table"``; ``None`` otherwise.
+        docx_para_idx: Index into the original ``doc.paragraphs`` list.
+            Only set by the python-docx reader; used for backfill
+            writers. ``None`` for non-docx sources.
         page_index: Zero-based page number the block appears on. Docx
             has no explicit pagination; readers estimate this.
         has_image: ``True`` if the block contains at least one image.
@@ -41,7 +128,7 @@ class Block:
         level_confidence: Reader's confidence in the ``level`` for
             headings; ``None`` when not applicable.
         signals: Reader-specific tags explaining how the block was
-            classified (e.g. ``["mammoth_conversion", "tag:h1"]``).
+            classified (e.g. ``["python_docx_reader", "style_id:Heading1"]``).
     """
 
     idx: int
@@ -49,6 +136,14 @@ class Block:
     level: int | None = None
     style_hint: str | None = None
     text: str = ""
+    spans: list[Span] | None = None
+    align: str | None = None
+    indent_first_line_pt: float | None = None
+    line_spacing: float | None = None
+    space_before_pt: float | None = None
+    space_after_pt: float | None = None
+    rows: list[list[Cell]] | None = None
+    docx_para_idx: int | None = None
     page_index: int = 0
     has_image: bool = False
     in_table: bool = False

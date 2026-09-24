@@ -1,30 +1,53 @@
 """Split a document into articles at headings.
 
-Operates on the HTML fragment mammoth produces, so each article keeps
-whatever formatting a reader sees — bold runs, tables, images — rather
-than being reconstructed from parsed blocks.
+Two split paths live side-by-side here:
+
+* :func:`split_by_headings` — operates on the HTML fragment mammoth
+  produces; the legacy path used by the default CLI. Kept because the
+  LangChain agent still talks HTML upstream and we do not want to break
+  that mid-flight.
+
+* :func:`split_blocks_by_headings` — operates on :class:`Block` lists
+  directly. The new path; it does not need HTML at all and so works for
+  any reader (docx via python-docx, PDF via pdfplumber, plain-text).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from bs4 import BeautifulSoup, NavigableString, Tag
+
+from .model import Block
 
 
 @dataclass(frozen=True)
 class Article:
     """One piece of a document, split at a heading.
 
+    Either ``html`` or ``blocks`` is populated depending on which split
+    path produced this article. Downstream code that writes to disk uses
+    ``html``; code that wants to reason about or translate the structure
+    uses ``blocks``.
+
     Attributes:
         number: ``0`` for the preamble, ``1..N`` for the articles.
         title: The heading text, or an empty string when there is none
             (the preamble, or a document that has no headings at all).
-        html: The piece as an HTML fragment.
+        html: The piece as an HTML fragment (legacy path). Empty string
+            when this article was produced by :func:`split_blocks_by_headings`.
+        blocks: The piece as a list of :class:`Block` (new path). Empty
+            list when produced by :func:`split_by_headings`.
+        docx_para_range: ``(first_para_idx, last_para_idx_inclusive)``
+            of this article in the original docx's paragraph list, or
+            ``None`` when the reader did not supply the information.
+            Used by backfill writers to locate the article's region.
     """
 
     number: int
     title: str
-    html: str
+    html: str = ""
+    blocks: list[Block] = field(default_factory=list)
+    docx_para_range: tuple[int, int] | None = None
 
     @property
     def is_preamble(self) -> bool:
@@ -169,3 +192,94 @@ def _serialize(nodes: list) -> str:
         str: The serialized fragment.
     """
     return "".join(str(node) for node in nodes)
+
+
+def split_blocks_by_headings(blocks: list[Block], level: int = 1) -> list[Article]:
+    """Split a :class:`Block` list into articles at each heading of ``level``.
+
+    Semantically identical to :func:`split_by_headings` — same preamble
+    rule, same single-article fallback when no headings match — but
+    consumes :class:`Block` objects rather than HTML fragments. This
+    makes it work for any reader, not just docx mammoth.
+
+    Args:
+        blocks: Ordered list of blocks in reading order.
+        level: Heading level to split on, 1-6.
+
+    Returns:
+        list[Article]: Pieces in document order. Each article carries
+        its ``blocks`` populated; ``html`` is empty.
+    """
+    heading_positions = [
+        i for i, b in enumerate(blocks)
+        if b.kind == "heading" and b.level == level
+    ]
+
+    articles: list[Article] = []
+    if heading_positions and heading_positions[0] > 0:
+        articles.append(Article(
+            number=0,
+            title="",
+            blocks=list(blocks[: heading_positions[0]]),
+        ))
+
+    number = 1
+    for pos, start in enumerate(heading_positions):
+        end = (
+            heading_positions[pos + 1]
+            if pos + 1 < len(heading_positions)
+            else len(blocks)
+        )
+        chunk = blocks[start:end]
+        articles.append(Article(
+            number=number,
+            title=chunk[0].text,
+            blocks=list(chunk),
+            docx_para_range=_range_of_docx_para_idx(chunk),
+        ))
+        number += 1
+
+    if not heading_positions:
+        articles.append(Article(
+            number=1,
+            title="",
+            blocks=list(blocks),
+        ))
+
+    return articles
+
+
+def heading_counts_for_blocks(blocks: list[Block]) -> dict[int, int]:
+    """Count top-level headings by level in a :class:`Block` list.
+
+    Same semantics as :func:`heading_counts` but operates directly on
+    blocks. Useful as a level-picker for callers that have a
+    :class:`DocProj` already — no need to serialize HTML just to count
+    headings.
+
+    Args:
+        blocks: Ordered list of blocks.
+
+    Returns:
+        dict[int, int]: Heading level (1-6) mapped to how many blocks
+        of ``kind="heading"`` carry that level. Absent levels mean no
+        headings at that level.
+    """
+    counts: dict[int, int] = {}
+    for b in blocks:
+        if b.kind == "heading" and b.level is not None:
+            counts[b.level] = counts.get(b.level, 0) + 1
+    return counts
+
+
+def _range_of_docx_para_idx(blocks: list[Block]) -> tuple[int, int] | None:
+    """Return the ``(min, max)`` of ``docx_para_idx`` across ``blocks``.
+
+    Returns ``None`` when no block carries a ``docx_para_idx`` — which
+    is the case for PDF readers or plain-text readers that do not map
+    blocks back to an OOXML paragraph index.
+    """
+    indices = [b.docx_para_idx for b in blocks if b.docx_para_idx is not None]
+    if not indices:
+        return None
+    return (min(indices), max(indices))
