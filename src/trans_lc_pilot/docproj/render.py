@@ -7,7 +7,15 @@ from __future__ import annotations
 
 from html import escape
 
-from .model import DocProj, register_renderer
+from .model import (
+    Block,
+    DocProj,
+    HeadingBlock,
+    ImageBlock,
+    ParagraphBlock,
+    TableBlock,
+    register_renderer,
+)
 
 _CSS = """
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -38,16 +46,18 @@ def _conf_class(conf: float) -> str:
     return cls
 
 
-def _kind_display(kind: str, level: int | None) -> str:
+def _kind_display(block: Block) -> str:
     """Short label for the ``kind`` column in the HTML table."""
-    if kind == "heading" and level is not None:
-        label = f"H{level}"
-    elif kind == "table":
+    if isinstance(block, HeadingBlock):
+        label = f"H{block.level}"
+    elif isinstance(block, TableBlock):
         label = "TBL"
-    elif kind == "image":
+    elif isinstance(block, ImageBlock):
         label = "IMG"
+    elif isinstance(block, ParagraphBlock):
+        label = "para"
     else:
-        label = kind
+        label = block.kind or "?"
     return label
 
 
@@ -61,7 +71,7 @@ def render_html(proj: DocProj) -> str:
     rows: list[str] = []
     for b in proj.blocks:
         cls = _conf_class(b.kind_confidence)
-        kind_disp = _kind_display(b.kind, b.level)
+        kind_disp = _kind_display(b)
         text = (b.text or "").replace("\n", " ")
         truncated = len(text) > 200
         if truncated:

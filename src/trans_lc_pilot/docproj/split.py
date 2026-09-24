@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
-from .model import Block
+from .model import Block, HeadingBlock
 
 
 @dataclass(frozen=True)
@@ -212,7 +212,7 @@ def split_blocks_by_headings(blocks: list[Block], level: int = 1) -> list[Articl
     """
     heading_positions = [
         i for i, b in enumerate(blocks)
-        if b.kind == "heading" and b.level == level
+        if isinstance(b, HeadingBlock) and b.level == level
     ]
 
     articles: list[Article] = []
@@ -267,7 +267,7 @@ def heading_counts_for_blocks(blocks: list[Block]) -> dict[int, int]:
     """
     counts: dict[int, int] = {}
     for b in blocks:
-        if b.kind == "heading" and b.level is not None:
+        if isinstance(b, HeadingBlock):
             counts[b.level] = counts.get(b.level, 0) + 1
     return counts
 

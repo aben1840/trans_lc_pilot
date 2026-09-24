@@ -25,7 +25,15 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Emu
 
-from ..model import Block, Cell, DocProj, Span
+from ..model import (
+    Block,
+    Cell,
+    DocProj,
+    HeadingBlock,
+    ParagraphBlock,
+    Span,
+    TableBlock,
+)
 from . import register_reader
 
 _EMU_PER_PT = 12700.0  # Word stores sizes in English Metric Units
@@ -105,14 +113,14 @@ def docx_to_docproj(path: str | Path) -> DocProj:
     )
 
 
-def _para_to_block(para, idx: int, *, docx_para_idx: int) -> Block | None:
-    """Turn one python-docx Paragraph into a Block.
+def _para_to_block(para, idx: int, *, docx_para_idx: int) -> ParagraphBlock | None:
+    """Turn one python-docx Paragraph into a paragraph or heading block.
 
-    Returns ``None`` for paragraphs that are empty *and* carry no runs
-    — these are the ones mammoth drops too, so we drop them here to
-    keep the block count comparable between readers. Paragraphs that
-    have runs but whose text strips to empty (e.g. whitespace-only) are
-    still emitted: they may carry explicit formatting the writer needs.
+    Returns ``None`` for paragraphs that are empty *and* carry no runs —
+    these are the ones mammoth drops too, so we drop them here to keep
+    the block count comparable between readers. Paragraphs that have
+    runs but whose text strips to empty (e.g. whitespace-only) are still
+    emitted: they may carry explicit formatting the writer needs.
     """
     style_id = ""
     style_name = None
@@ -121,12 +129,8 @@ def _para_to_block(para, idx: int, *, docx_para_idx: int) -> Block | None:
         style_name = para.style.name
 
     m = re.match(r"Heading\s*(\d)", style_id, re.IGNORECASE)
-    if m:
-        kind = "heading"
-        level = int(m.group(1))
-    else:
-        kind = "paragraph"
-        level = None
+    is_heading = bool(m)
+    level = int(m.group(1)) if m else 1
 
     if not para.text.strip() and not para.runs:
         return None
@@ -144,23 +148,28 @@ def _para_to_block(para, idx: int, *, docx_para_idx: int) -> Block | None:
     if indent_first is not None and pf.left_indent is not None:
         indent_first -= _emu_to_pt(pf.left_indent) or 0
 
-    return Block(
-        idx=idx,
-        kind=kind,
-        level=level,
-        text=para.text,
-        spans=spans if spans else None,
-        align=align,
-        indent_first_line_pt=indent_first,
-        line_spacing=pf.line_spacing,
-        space_before_pt=_emu_to_pt(pf.space_before),
-        space_after_pt=_emu_to_pt(pf.space_after),
-        style_hint=style_name,
-        docx_para_idx=docx_para_idx,
-        kind_confidence=1.0,
-        level_confidence=1.0 if level is not None else None,
-        signals=["python_docx_reader", f"style_id:{style_id or 'None'}"],
-    )
+    common = {
+        "idx": idx,
+        "text": para.text,
+        "spans": spans,
+        "align": align,
+        "indent_first_line_pt": indent_first,
+        "line_spacing": pf.line_spacing,
+        "space_before_pt": _emu_to_pt(pf.space_before),
+        "space_after_pt": _emu_to_pt(pf.space_after),
+        "style_hint": style_name,
+        "docx_para_idx": docx_para_idx,
+        "kind_confidence": 1.0,
+        "signals": ["python_docx_reader", f"style_id:{style_id or 'None'}"],
+    }
+
+    if is_heading:
+        return HeadingBlock(
+            **common,
+            level=level,
+            level_confidence=1.0,
+        )
+    return ParagraphBlock(**common)
 
 
 def _extract_spans(runs) -> list[Span]:
@@ -225,8 +234,8 @@ def _merge_adjacent(spans: list[Span]) -> list[Span]:
     return merged
 
 
-def _table_to_block(table, idx: int) -> Block:
-    """Turn one python-docx Table into a Block with a Cell grid."""
+def _table_to_block(table, idx: int) -> TableBlock:
+    """Turn one python-docx Table into a :class:`TableBlock` with a Cell grid."""
     rows: list[list[Cell]] = []
     text_lines: list[str] = []
 
@@ -242,9 +251,8 @@ def _table_to_block(table, idx: int) -> Block:
         rows.append(cells_row)
         text_lines.append(" | ".join(cell_texts))
 
-    return Block(
+    return TableBlock(
         idx=idx,
-        kind="table",
         text="\n".join(text_lines),
         rows=rows,
         in_table=True,

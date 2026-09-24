@@ -13,7 +13,15 @@ from pathlib import Path
 from docx import Document
 from docx.shared import Pt
 
-from ..model import Block, Cell, DocProj, Span
+from ..model import (
+    Cell,
+    DocProj,
+    HeadingBlock,
+    ImageBlock,
+    ParagraphBlock,
+    Span,
+    TableBlock,
+)
 from . import register_writer
 
 _EMU_PER_PT = 12700.0
@@ -47,9 +55,9 @@ write_docx._supports_backfill = True  # type: ignore[attr-defined]
 def _assemble_by_backfill(proj: DocProj, original: Path, output: Path) -> None:
     """Open ``original``, edit paragraphs in place, save to ``output``."""
     doc = Document(str(original))
-    para_blocks: dict[int, Block] = {}
+    para_blocks: dict[int, ParagraphBlock] = {}
     for b in proj.blocks:
-        if b.docx_para_idx is not None and b.kind in ("heading", "paragraph"):
+        if b.docx_para_idx is not None and isinstance(b, ParagraphBlock):
             para_blocks[b.docx_para_idx] = b
 
     for idx, block in para_blocks.items():
@@ -59,7 +67,7 @@ def _assemble_by_backfill(proj: DocProj, original: Path, output: Path) -> None:
     doc.save(str(output))
 
 
-def _replace_para_text(para, block: Block) -> None:
+def _replace_para_text(para, block: ParagraphBlock) -> None:
     """Replace the text of ``para`` with ``block.text``, preserving format.
 
     Strategy:
@@ -128,9 +136,9 @@ def _build_from_scratch(proj: DocProj, output: Path) -> None:
     doc = Document()
 
     for block in proj.blocks:
-        if block.kind == "heading":
-            para = doc.add_heading(block.text, level=block.level or 1)
-        elif block.kind == "table" and block.rows:
+        if isinstance(block, HeadingBlock):
+            para = doc.add_heading(block.text, level=block.level)
+        elif isinstance(block, TableBlock) and block.rows:
             n_rows = len(block.rows)
             n_cols = max((len(r) for r in block.rows), default=0)
             table = doc.add_table(rows=n_rows, cols=n_cols)
@@ -140,23 +148,23 @@ def _build_from_scratch(proj: DocProj, output: Path) -> None:
                     if c_idx < len(table.rows[r_idx].cells):
                         _write_cell(table.rows[r_idx].cells[c_idx], cell)
             continue
-        elif block.kind == "image":
+        elif isinstance(block, ImageBlock):
             doc.add_paragraph(f"[image placeholder: {block.text!r}]")
             continue
-        else:
+        elif isinstance(block, ParagraphBlock):
             para = doc.add_paragraph()
 
-        if block.spans:
-            _rebuild_para_from_spans(para, block.spans)
-        else:
-            para.add_run(block.text)
+            if block.spans:
+                _rebuild_para_from_spans(para, block.spans)
+            else:
+                para.add_run(block.text)
 
-        if block.align == "center":
-            para.alignment = 1  # WD_ALIGN_PARAGRAPH.CENTER
-        elif block.align == "right":
-            para.alignment = 2
-        elif block.align == "justify":
-            para.alignment = 3
+            if block.align == "center":
+                para.alignment = 1  # WD_ALIGN_PARAGRAPH.CENTER
+            elif block.align == "right":
+                para.alignment = 2
+            elif block.align == "justify":
+                para.alignment = 3
 
     doc.save(str(output))
 
