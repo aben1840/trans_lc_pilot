@@ -1,8 +1,9 @@
 """Present a projection: write it to disk, open it in a browser.
 
-These are the side-effecting companions to :mod:`trans_lc_pilot.docproj.render`,
-which only turns a :class:`DocProj` into a string. Keeping them here rather
-than in the REPL lets them be reused as agent tools later.
+These are the side-effecting companions to
+:mod:`trans_lc_pilot.docproj.inspection`, which only turns a :class:`DocProj`
+into a string. Keeping them here rather than in the REPL lets them be reused
+as agent tools later.
 """
 from __future__ import annotations
 
@@ -17,8 +18,9 @@ from pathlib import Path
 
 import mammoth
 
-from .model import DocProj
-from .split import Article, split_by_headings
+from .article import Article
+from .document import DocProj
+from .headings import split_by_headings
 
 TMP_DIR = Path(__file__).resolve().parents[3] / ".tmp"
 

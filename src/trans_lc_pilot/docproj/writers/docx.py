@@ -13,7 +13,7 @@ from pathlib import Path
 from docx import Document
 from docx.shared import Pt
 
-from ..model import (
+from ..document import (
     Cell,
     DocProj,
     HeadingBlock,

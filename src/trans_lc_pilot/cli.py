@@ -10,7 +10,7 @@ import argparse
 import sys
 import traceback
 
-from .docproj import DocProj, heading_counts, present, read, split_by_headings
+from .docproj import DocProj, heading_counts, presentation, read, split_by_headings
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -109,7 +109,7 @@ def _list_levels(proj: DocProj) -> int:
         int: Always ``0``. A document with no headings at all is a
         valid document, not a failure.
     """
-    _print_levels(heading_counts(present.source_fragment(proj)))
+    _print_levels(heading_counts(presentation.source_fragment(proj)))
     return 0
 
 
@@ -139,11 +139,11 @@ def _convert_document(proj: DocProj, open_after: bool) -> int:
     Returns:
         int: ``0`` on success.
     """
-    path = present.write_source_html(proj)
+    path = presentation.write_source_html(proj)
     print(f"source: {proj.source_path}")
     print(f"html: {path}")
     if open_after:
-        print(present.open_in_browser(path))
+        print(presentation.open_in_browser(path))
     return 0
 
 
@@ -162,9 +162,9 @@ def _split_document(proj: DocProj, level: int, open_after: bool) -> int:
     Returns:
         int: ``0`` on success.
     """
-    fragment = present.source_fragment(proj)
+    fragment = presentation.source_fragment(proj)
     art_list = split_by_headings(fragment, level=level)
-    index_path = present.write_articles(proj, level=level)
+    index_path = presentation.write_articles(proj, level=level)
 
     print(f"source: {proj.source_path}")
     print(f"level: {level}")
@@ -177,7 +177,7 @@ def _split_document(proj: DocProj, level: int, open_after: bool) -> int:
     _print_levels(heading_counts(fragment))
     print(f"index: {index_path}")
     if open_after:
-        print(present.open_in_browser(index_path))
+        print(presentation.open_in_browser(index_path))
     return 0
 
 

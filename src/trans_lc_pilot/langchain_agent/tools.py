@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.tools import tool
 
-from trans_lc_pilot.docproj import heading_counts, present, read
-from trans_lc_pilot.docproj.split import split_by_headings
+from trans_lc_pilot.docproj import heading_counts, presentation, read
+from trans_lc_pilot.docproj.headings import split_by_headings
 
 
 @tool
@@ -48,7 +48,7 @@ def list_docx_heading_levels(file_path: str) -> str:
         ``"no headings found"`` when the document has no heading styles.
     """
     proj = read(file_path)
-    counts = heading_counts(present.source_fragment(proj))
+    counts = heading_counts(presentation.source_fragment(proj))
     if not counts:
         return "no headings found"
     lines = [f"h{level}: {count}" for level, count in sorted(counts.items())]
@@ -73,10 +73,10 @@ def convert_docx_to_html(file_path: str, open_browser: bool = True) -> str:
         browser-open status line.
     """
     proj = read(file_path)
-    path = present.write_source_html(proj)
+    path = presentation.write_source_html(proj)
     result = f"source: {proj.source_path}\nhtml: {path}"
     if open_browser:
-        result += f"\n{present.open_in_browser(path)}"
+        result += f"\n{presentation.open_in_browser(path)}"
     return result
 
 
@@ -104,9 +104,9 @@ def split_docx_by_headings(
         optional note about preamble or "no heading at this level".
     """
     proj = read(file_path)
-    fragment = present.source_fragment(proj)
+    fragment = presentation.source_fragment(proj)
     articles = split_by_headings(fragment, level=level)
-    index_path = present.write_articles(proj, level=level)
+    index_path = presentation.write_articles(proj, level=level)
 
     lines: list[str] = [
         f"source: {proj.source_path}",
@@ -126,7 +126,7 @@ def split_docx_by_headings(
         lines.append("  no headings found")
     lines.append(f"index: {index_path}")
     if open_browser:
-        lines.append(present.open_in_browser(index_path))
+        lines.append(presentation.open_in_browser(index_path))
     return "\n".join(lines)
 
 

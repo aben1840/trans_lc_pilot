@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from ..model import DocProj
+from ..document import DocProj
 
 Writer = Callable[[DocProj, Path], None]
 WRITERS: dict[str, Writer] = {}

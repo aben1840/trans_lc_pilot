@@ -1,13 +1,14 @@
-"""Built-in renderers for DocProj.
+"""HTML inspection views for DocProj.
 
-HTML is the complete rendering today. Markdown and JSON are reserved
-for future steps and currently raise :class:`NotImplementedError`.
+The HTML view exposes the parsed document structure. Markdown and JSON
+views are reserved for future steps and currently raise
+:class:`NotImplementedError`.
 """
 from __future__ import annotations
 
 from html import escape
 
-from .model import (
+from .document import (
     Block,
     DocProj,
     HeadingBlock,
@@ -35,7 +36,7 @@ td.muted { color: #888; font-size: 0.85em; }
 """
 
 
-def _conf_class(conf: float) -> str:
+def _confidence_class(conf: float) -> str:
     """Map a confidence score to a CSS row class."""
     if conf >= 0.8:
         cls = "conf-high"
@@ -70,7 +71,7 @@ def render_html(proj: DocProj) -> str:
     """
     rows: list[str] = []
     for b in proj.blocks:
-        cls = _conf_class(b.kind_confidence)
+        cls = _confidence_class(b.kind_confidence)
         kind_disp = _kind_display(b)
         text = (b.text or "").replace("\n", " ")
         truncated = len(text) > 200

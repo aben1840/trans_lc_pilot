@@ -33,7 +33,7 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 项目采用 `src/` 布局的 Python 包。所有应用代码位于 `src/trans_lc_pilot/` 下，分为两个平行消费侧和一个共享能力内核：
 
-- `docproj/` — 文档处理内核。`DocProj` 数据模型、`readers/`（docx 等格式解析）、`split.py`（按标题拆分）、`present.py`（写入 HTML、打开浏览器）。两侧共用，**不依赖** LangChain。
+- `docproj/` — 文档处理内核。`DocProj` 数据模型、`readers/`（docx 等格式解析）、`headings.py`（按标题拆分）、`presentation.py`（写入 HTML、打开浏览器）。两侧共用，**不依赖** LangChain。
 - `cli.py` — docx 专用 argparse 入口（`trans-lc-pilot` 脚本）。只处理 `--list-levels`、`--convert`、`--split` 三个分支，**无 LLM 依赖**。
 - `langchain_agent/` — 独立 LangChain agent 运行时（`trans-lc-pilot-agent` 脚本）。自包含：`config.py`（Settings + load_settings）、`prompt.py`（system prompt）、`tools.py`（`@tool` 注册）、`agent.py`（build_llm / build_agent / run_once）、`repl.py`（交互式 REPL）、`entry.py`（独立 CLI 入口）。
 
