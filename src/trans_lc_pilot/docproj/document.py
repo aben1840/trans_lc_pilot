@@ -4,6 +4,10 @@ The canonical data lives in :class:`DocProj` (a dataclass). HTML is the
 first concrete rendering; Markdown and JSON are reserved for future
 steps and currently raise :class:`NotImplementedError`.
 
+:meth:`DocProj.source_fragment` is a distinct path: it renders the
+originating docx via mammoth (bypassing :attr:`blocks`) to produce the
+HTML a reader sees — useful for downstream tools that expect raw HTML.
+
 Format fidelity lives at three levels:
 
 * **Block hierarchy** — :class:`Block` base with subclasses
@@ -17,6 +21,11 @@ Span and Cell are frozen (format facts do not mutate); the Block
 subclasses are mutable because translation edits text in place.
 """
 from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import mammoth
 
 from abc import ABC
 from collections.abc import Callable
@@ -257,6 +266,29 @@ class DocProj:
                 f"available: {sorted(RENDERERS)}"
             )
         return renderer(self)
+
+    def source_fragment(self) -> str:
+        """Return the HTML fragment mammoth produces from the source docx.
+
+        This bypasses :attr:`blocks` — it re-converts the originating
+        file from scratch. The result is the document as a reader sees
+        it, with empty paragraphs preserved so blank lines survive the
+        conversion.
+
+        mammoth is re-run on each call rather than cached in
+        :attr:`metadata`: it is cheap, and caching would inflate every
+        projection with HTML that most callers never ask for.
+
+        Returns:
+            str: HTML fragment, with no ``<html>`` or ``<body>`` wrapper.
+
+        Raises:
+            FileNotFoundError: If :attr:`source_path` is no longer there.
+            OSError: On read failure.
+        """
+        with self.source_path.open("rb") as f:
+            result = mammoth.convert_to_html(f, ignore_empty_paragraphs=False)
+        return result.value
 
 
 Renderer = Callable[[DocProj], str]

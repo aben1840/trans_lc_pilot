@@ -109,7 +109,7 @@ def _list_levels(proj: DocProj) -> int:
         int: Always ``0``. A document with no headings at all is a
         valid document, not a failure.
     """
-    _print_levels(heading_counts(presentation.source_fragment(proj)))
+    _print_levels(heading_counts(proj.source_fragment()))
     return 0
 
 
@@ -162,7 +162,7 @@ def _split_document(proj: DocProj, level: int, open_after: bool) -> int:
     Returns:
         int: ``0`` on success.
     """
-    fragment = presentation.source_fragment(proj)
+    fragment = proj.source_fragment()
     art_list = split_by_headings(fragment, level=level)
     index_path = presentation.write_articles(proj, level=level)
 

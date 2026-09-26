@@ -16,8 +16,6 @@ import tempfile
 from html import escape
 from pathlib import Path
 
-import mammoth
-
 from .article import Article
 from .document import DocProj
 from .headings import split_by_headings
@@ -44,8 +42,8 @@ def _browser_command() -> list[str] | None:
     return None
 
 
-def write_html(proj: DocProj) -> Path:
-    """Render ``proj`` to HTML and write it to a fresh temp file.
+def write_inspection_html(proj: DocProj) -> Path:
+    """Render ``proj``'s inspection view and write it to a fresh temp file.
 
     Files land in ``<repo>/.tmp/`` rather than the system tempdir so
     that snap-packaged browsers (Firefox, Chromium) — whose
@@ -106,39 +104,12 @@ def _wrap_as_document(fragment: str, title: str) -> str:
     )
 
 
-def source_fragment(proj: DocProj) -> str:
-    """Run mammoth over the source docx and return the HTML fragment.
-
-    Empty paragraphs are preserved (``ignore_empty_paragraphs=False``)
-    so blank lines in the source survive the conversion. Callers that
-    need a standalone page should pass the result through
-    :func:`_wrap_as_document`.
-
-    mammoth is re-run on each call rather than cached in ``DocProj``
-    metadata: it is cheap, and caching would inflate every projection
-    with HTML that most callers never ask for.
-
-    Args:
-        proj: The projection whose source file is to be converted.
-
-    Returns:
-        str: HTML fragment, with no ``<html>`` or ``<body>`` wrapper.
-
-    Raises:
-        FileNotFoundError: If ``proj.source_path`` is no longer there.
-        OSError: On read failure.
-    """
-    with proj.source_path.open("rb") as f:
-        result = mammoth.convert_to_html(f, ignore_empty_paragraphs=False)
-    return result.value
-
-
 def write_source_html(proj: DocProj) -> Path:
-    """Convert ``proj``'s source file to HTML via mammoth and write it.
+    """Render ``proj``'s source view to HTML and write it.
 
-    Differs from :func:`write_html`: the output is the raw HTML mammoth
-    generates from the docx — the document as a reader sees it — rather
-    than a tabular view of the parsed :class:`DocProj`.
+    Differs from :func:`write_inspection_html`: the output is the raw HTML
+    mammoth generates from the docx — the document as a reader sees it —
+    rather than a tabular view of the parsed :class:`DocProj`.
 
     The fragment is wrapped in a standalone HTML document so that
     preserved empty ``<p>`` elements actually render as blank lines.
@@ -155,7 +126,7 @@ def write_source_html(proj: DocProj) -> Path:
     """
     TMP_DIR.mkdir(exist_ok=True)
     html = _wrap_as_document(
-        source_fragment(proj), title=f"DocProj: {proj.source_path.name}"
+        proj.source_fragment(), title=f"DocProj: {proj.source_path.name}"
     )
 
     fd, name = tempfile.mkstemp(prefix="docproj-source-", suffix=".html", dir=TMP_DIR)
@@ -246,7 +217,7 @@ def write_articles(proj: DocProj, level: int = 1) -> Path:
         OSError: On I/O failure while reading or writing.
     """
     TMP_DIR.mkdir(exist_ok=True)
-    articles = split_by_headings(source_fragment(proj), level=level)
+    articles = split_by_headings(proj.source_fragment(), level=level)
     out_dir = Path(tempfile.mkdtemp(prefix="articles-", dir=TMP_DIR))
     for article in articles:
         title = article.title or proj.source_path.name

@@ -48,7 +48,7 @@ def list_docx_heading_levels(file_path: str) -> str:
         ``"no headings found"`` when the document has no heading styles.
     """
     proj = read(file_path)
-    counts = heading_counts(presentation.source_fragment(proj))
+    counts = heading_counts(proj.source_fragment())
     if not counts:
         return "no headings found"
     lines = [f"h{level}: {count}" for level, count in sorted(counts.items())]
@@ -104,7 +104,7 @@ def split_docx_by_headings(
         optional note about preamble or "no heading at this level".
     """
     proj = read(file_path)
-    fragment = presentation.source_fragment(proj)
+    fragment = proj.source_fragment()
     articles = split_by_headings(fragment, level=level)
     index_path = presentation.write_articles(proj, level=level)
 
