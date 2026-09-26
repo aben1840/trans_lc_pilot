@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .article import Article
 from .document import DocProj
-from .headings import split_by_headings
+from .html_headings import split_by_headings
 
 TMP_DIR = Path(__file__).resolve().parents[3] / ".tmp"
 

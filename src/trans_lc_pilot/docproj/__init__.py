@@ -14,11 +14,11 @@ Typical usage::
 """
 from __future__ import annotations
 
-from . import headings, presentation
+from . import html_headings, presentation
 from .document import RENDERERS, Block, DocProj, Renderer, register_renderer
 from .inspection import render_html, render_json, render_markdown
 from .readers import READERS, Reader, read, register_reader
-from .headings import (
+from .html_headings import (
     Article,
     heading_counts,
     split_by_headings,

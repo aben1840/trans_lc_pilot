@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from langchain_core.tools import tool
 
 from trans_lc_pilot.docproj import heading_counts, presentation, read
-from trans_lc_pilot.docproj.headings import split_by_headings
+from trans_lc_pilot.docproj.html_headings import split_by_headings
 
 
 @tool
