@@ -16,10 +16,11 @@ from __future__ import annotations
 
 from . import html_headings, presentation
 from .document import RENDERERS, Block, DocProj, Renderer, register_renderer
-from .inspection import render_html, render_json, render_markdown
-from .readers import READERS, Reader, read, register_reader
 from .html_headings import (
     Article,
     heading_counts,
     split_by_headings,
+    split_docproj_by_headings,
 )
+from .inspection import render_html, render_json, render_markdown
+from .readers import READERS, Reader, read, register_reader

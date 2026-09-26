@@ -1,13 +1,31 @@
 """Split a document into articles at headings.
 
-The splitter operates on the HTML fragment produced by mammoth. This is
-the path used by the default CLI and the LangChain agent.
+Two split paths live here:
+
+* :func:`split_by_headings` —路线 B. Operates on the HTML fragment
+  produced by mammoth. No DocProj needed, no backfill anchors.
+
+* :func:`split_docproj_by_headings` —路线 A. Operates on a :class:`DocProj`
+  and its source docx, producing articles that carry both the HTML the
+  LLM sees and the ``block_indices`` / ``docx_para_indices`` /
+  ``docx_table_indices`` needed for a future backfill merge. The
+  extracted fragment is a real .docx produced by
+  :func:`trans_lc_pilot.docproj.extract.extract_docx_fragment` so the
+  content path and the anchor path share the same python-docx truth.
+
+Structure-only block splitting lives on :meth:`DocProj.split_at_headings`
+— that method is pure ``blocks`` manipulation, no HTML involved.
 """
 from __future__ import annotations
 
+from io import BytesIO
+
+import mammoth
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 from .article import Article
+from .document import DocProj, HeadingBlock
+from .extract import extract_docx_fragment
 
 
 def split_by_headings(fragment: str, level: int = 1) -> list[Article]:
@@ -147,3 +165,74 @@ def _serialize(nodes: list) -> str:
         str: The serialized fragment.
     """
     return "".join(str(node) for node in nodes)
+
+
+def split_docproj_by_headings(proj: DocProj, level: int = 1) -> list[Article]:
+    """Split a :class:`DocProj` into articles with backfill anchors (路线 A).
+
+    Split boundaries are determined solely by :class:`HeadingBlock`
+    positions in :attr:`DocProj.blocks` — no HTML heading detection.
+    For each slice, the LLM-facing HTML is produced by extracting the
+    slice as a standalone .docx (via :func:`extract_docx_fragment`) and
+    converting that fragment with mammoth. Because both the slice and
+    the anchors come from the same python-docx source, the content and
+    anchor paths are guaranteed consistent.
+
+    Args:
+        proj: The projection to split. Must have been produced by the
+            python-docx reader so ``docx_para_idx`` / ``docx_table_idx``
+            values exist, and :attr:`source_path` points to the source
+            docx.
+        level: Heading level to split on, 1-6.
+
+    Returns:
+        list[Article]: Articles with populated ``html``,
+        ``block_indices``, ``docx_para_indices``, and
+        ``docx_table_indices``.
+    """
+    if proj.source_path is None:
+        raise ValueError(
+            "split_docproj_by_headings requires proj.source_path "
+            "(路线 A needs the source docx to extract fragments)"
+        )
+
+    chunks = proj.split_at_headings(level)
+
+    articles: list[Article] = []
+    number = 1
+    for block_idxs, para_idxs, table_idxs in chunks:
+        title = ""
+        if block_idxs:
+            first = proj.blocks[block_idxs[0]]
+            if isinstance(first, HeadingBlock):
+                title = first.text
+
+        para_list = list(para_idxs)
+        table_list = list(table_idxs)
+
+        if para_list or table_list:
+            fragment_bytes = extract_docx_fragment(
+                proj.source_path, para_indices=para_list, table_indices=table_list
+            )
+            html = _docx_bytes_to_html(fragment_bytes)
+        else:
+            html = ""
+
+        articles.append(
+            Article(
+                number=number,
+                title=title,
+                html=html,
+                block_indices=block_idxs,
+                docx_para_indices=para_idxs,
+                docx_table_indices=table_idxs,
+            )
+        )
+        number += 1
+    return articles
+
+
+def _docx_bytes_to_html(docx_bytes: bytes) -> str:
+    """Convert a docx byte string to an HTML fragment via mammoth."""
+    result = mammoth.convert_to_html(BytesIO(docx_bytes))
+    return result.value

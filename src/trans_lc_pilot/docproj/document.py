@@ -203,12 +203,17 @@ class TableBlock(Block):
         docx_para_idx: Index of the anchor paragraph in the original
             docx (the paragraph immediately before the table). Used for
             positioning by backfill writers. ``None`` for non-docx sources.
+        docx_table_idx: Index into the original ``doc.tables`` list.
+            Only set by the python-docx reader; used by extract/split
+            utilities that need to point to a specific table in the
+            source docx. ``None`` for non-docx sources.
     """
 
     kind: str = "table"
     rows: list[list[Cell]] = field(default_factory=list)
     style_hint: str | None = None
     docx_para_idx: int | None = None
+    docx_table_idx: int | None = None
 
 
 @dataclass
@@ -286,6 +291,78 @@ class DocProj:
         with self.source_path.open("rb") as f:
             result = mammoth.convert_to_html(f, ignore_empty_paragraphs=False)
         return result.value
+
+    def split_at_headings(
+        self, level: int = 1
+    ) -> list[tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]]:
+        """Split :attr:`blocks` at heading boundaries of ``level``.
+
+        Returns a list of ``(block_indices, docx_para_indices,
+        docx_table_indices)`` tuples — one per article, in document
+        order. Follows the same preamble convention as
+        :func:`split_by_headings`: blocks before the first matching
+        heading become the preamble when non-empty.
+
+        This is a pure structure operation — no HTML is involved. Call
+        it when you need to know which original blocks belong to which
+        article, independently of how the article is rendered.
+
+        Args:
+            level: Heading level to split on, 1-6.
+
+        Returns:
+            list[tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]]:
+            One entry per article. Each entry is ``(block_indices,
+            docx_para_indices, docx_table_indices)`` — indices into
+            :attr:`blocks`, the python-docx paragraph anchors of the
+            :class:`ParagraphBlock` items, and the python-docx table
+            anchors of the :class:`TableBlock` items within that slice.
+        """
+        heading_idxs = [
+            i
+            for i, b in enumerate(self.blocks)
+            if isinstance(b, HeadingBlock) and b.level == level
+        ]
+
+        if not heading_idxs:
+            return [_collect_anchors(self.blocks, 0, len(self.blocks))]
+
+        chunks: list[tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]] = []
+        if heading_idxs[0] > 0:
+            chunks.append(_collect_anchors(self.blocks, 0, heading_idxs[0]))
+
+        for pos, start in enumerate(heading_idxs):
+            end = (
+                heading_idxs[pos + 1]
+                if pos + 1 < len(heading_idxs)
+                else len(self.blocks)
+            )
+            chunks.append(_collect_anchors(self.blocks, start, end))
+
+        return chunks
+
+
+def _collect_anchors(
+    blocks: list[Block], start: int, end: int
+) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+    """Collect block indices, docx paragraph indices, and docx table indices.
+
+    All three index kinds are collected for the blocks in
+    ``blocks[start:end]``. Paragraph indices come from
+    :class:`ParagraphBlock.docx_para_idx`; table indices come from
+    :class:`TableBlock.docx_table_idx`.
+    """
+    block_indices: list[int] = []
+    para_indices: list[int] = []
+    table_indices: list[int] = []
+    for i in range(start, end):
+        block_indices.append(i)
+        b = blocks[i]
+        if isinstance(b, ParagraphBlock) and b.docx_para_idx is not None:
+            para_indices.append(b.docx_para_idx)
+        elif isinstance(b, TableBlock) and b.docx_table_idx is not None:
+            table_indices.append(b.docx_table_idx)
+    return (tuple(block_indices), tuple(para_indices), tuple(table_indices))
 
 
 Renderer = Callable[[DocProj], str]

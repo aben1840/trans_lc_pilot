@@ -81,6 +81,7 @@ def docx_to_docproj(path: str | Path) -> DocProj:
     blocks: list[Block] = []
     para_counter = 0
     block_idx = 0
+    table_counter = 0
 
     table_elements = {tbl._tbl: tbl for tbl in doc.tables}
 
@@ -98,7 +99,10 @@ def docx_to_docproj(path: str | Path) -> DocProj:
         elif tag == "tbl":
             table = table_elements.get(child)
             if table is not None:
-                blocks.append(_table_to_block(table, block_idx))
+                blocks.append(
+                    _table_to_block(table, block_idx, docx_table_idx=table_counter)
+                )
+                table_counter += 1
                 block_idx += 1
 
     return DocProj(
@@ -234,7 +238,7 @@ def _merge_adjacent(spans: list[Span]) -> list[Span]:
     return merged
 
 
-def _table_to_block(table, idx: int) -> TableBlock:
+def _table_to_block(table, idx: int, *, docx_table_idx: int) -> TableBlock:
     """Turn one python-docx Table into a :class:`TableBlock` with a Cell grid."""
     rows: list[list[Cell]] = []
     text_lines: list[str] = []
@@ -259,6 +263,7 @@ def _table_to_block(table, idx: int) -> TableBlock:
         style_hint=table.style.name if table.style is not None else None,
         kind_confidence=1.0,
         signals=["python_docx_reader", "tag:tbl"],
+        docx_table_idx=docx_table_idx,
     )
 
 
