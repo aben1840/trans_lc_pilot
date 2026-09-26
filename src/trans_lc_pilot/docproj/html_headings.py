@@ -147,8 +147,3 @@ def _serialize(nodes: list) -> str:
         str: The serialized fragment.
     """
     return "".join(str(node) for node in nodes)
-
-
-
-
-

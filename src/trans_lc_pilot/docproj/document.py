@@ -22,15 +22,12 @@ subclasses are mutable because translation edits text in place.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
-
-import mammoth
-
 from abc import ABC
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import mammoth
 
 
 @dataclass(frozen=True)
