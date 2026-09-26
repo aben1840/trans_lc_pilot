@@ -34,7 +34,7 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 项目采用 `src/` 布局的 Python 包。所有应用代码位于 `src/trans_lc_pilot/` 下，分为两个平行消费侧和一个共享能力内核：
 
-- `docproj/` — 文档处理内核。`DocProj` 数据模型、`readers/`（docx 等格式解析）、`headings.py`（按标题拆分）、`presentation.py`（写入 HTML、打开浏览器）。两侧共用，**不依赖** LangChain。
+- `docproj/` — 文档处理内核。`source.py`（加载 docx 并经 mammoth 转为 HTML 片段）、`html_headings.py`（按标题拆分）、`article.py`（`Article` 数据模型）、`presentation.py`（写入 HTML、打开浏览器）。两侧共用，**不依赖** LangChain。
 - `cli.py` — docx 专用 argparse 入口（`trans-lc-pilot` 脚本）。只处理 `--list-levels`、`--convert`、`--split` 三个分支，**无 LLM 依赖**。
 - `langchain_agent/` — 独立 LangChain agent 运行时（`trans-lc-pilot-agent` 脚本）。自包含：`config.py`（Settings + load_settings）、`prompt.py`（system prompt）、`tools.py`（`@tool` 注册）、`agent.py`（build_llm / build_agent / run_once）、`repl.py`（交互式 REPL）、`entry.py`（独立 CLI 入口）。
 
@@ -60,27 +60,26 @@ AGENTS.md                       ← 本文档：开发协作指南
 - Python ≥ 3.12。每个模块以 `from __future__ import annotations` 开头。
 - 所有公开函数和 dataclass 字段都要有类型注解；优先使用现代语法（`str | None`、`list[str]`）。
 - 模块、函数、变量用 `snake_case`；类用 `PascalCase`（如 `Settings`）。模块文件名用简短名词（`cli.py`、`entry.py`）。
-- 分支用 `if … elif … else` 链表达。
+- 分支用 `if … elif … else` 链表达（例子取自 `docproj/source.py` 的 `read`）。
   - 优先这样写：
 
     ```python
-    if kind == "docx":
-        reader = docx_to_docproj
-    elif kind == "md":
-        reader = md_to_docproj
+    if fmt == "docx":
+        with p.open("rb") as f:
+            result = mammoth.convert_to_html(f, ignore_empty_paragraphs=False)
     else:
-        raise ValueError(f"unsupported kind: {kind}")
-    return reader(path)
+        raise NotImplementedError(f"unsupported format: {fmt!r}")
+    return SourceDoc(path=p, fragment=result.value)
     ```
 
   - 不要这样写：
 
     ```python
-    if kind == "docx":
-        return docx_to_docproj(path)
-    if kind == "md":
-        return md_to_docproj(path)
-    raise ValueError(f"unsupported kind: {kind}")
+    if fmt != "docx":
+        raise NotImplementedError(f"unsupported format: {fmt!r}")
+    with p.open("rb") as f:
+        result = mammoth.convert_to_html(f, ignore_empty_paragraphs=False)
+    return SourceDoc(path=p, fragment=result.value)
     ```
 
 - 已配置 `ruff` 作为 linter（见 `pyproject.toml` 中的 `[tool.ruff]`）。

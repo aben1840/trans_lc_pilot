@@ -6,8 +6,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.tools import tool
 
-from trans_lc_pilot.docproj import heading_counts, presentation, read
-from trans_lc_pilot.docproj.html_headings import split_by_headings
+from trans_lc_pilot.docproj import (
+    heading_counts,
+    presentation,
+    read,
+    split_by_headings,
+)
 
 
 @tool
@@ -47,8 +51,8 @@ def list_docx_heading_levels(file_path: str) -> str:
         str: One line per heading level present (e.g. ``"h2: 5"``), or
         ``"no headings found"`` when the document has no heading styles.
     """
-    proj = read(file_path)
-    counts = heading_counts(proj.source_fragment())
+    doc = read(file_path)
+    counts = heading_counts(doc.fragment)
     if not counts:
         return "no headings found"
     lines = [f"h{level}: {count}" for level, count in sorted(counts.items())]
@@ -72,9 +76,9 @@ def convert_docx_to_html(file_path: str, open_browser: bool = True) -> str:
         str: Path of the written HTML file, optionally followed by a
         browser-open status line.
     """
-    proj = read(file_path)
-    path = presentation.write_source_html(proj)
-    result = f"source: {proj.source_path}\nhtml: {path}"
+    doc = read(file_path)
+    path = presentation.write_source_html(doc)
+    result = f"source: {doc.path}\nhtml: {path}"
     if open_browser:
         result += f"\n{presentation.open_in_browser(path)}"
     return result
@@ -103,13 +107,12 @@ def split_docx_by_headings(
         article count, available heading levels, index path, and an
         optional note about preamble or "no heading at this level".
     """
-    proj = read(file_path)
-    fragment = proj.source_fragment()
-    articles = split_by_headings(fragment, level=level)
-    index_path = presentation.write_articles(proj, level=level)
+    doc = read(file_path)
+    articles = split_by_headings(doc.fragment, level=level)
+    index_path = presentation.write_articles(doc, level=level)
 
     lines: list[str] = [
-        f"source: {proj.source_path}",
+        f"source: {doc.path}",
         f"level: {level}",
         f"articles: {len(articles)}",
     ]
@@ -118,7 +121,7 @@ def split_docx_by_headings(
     if len(articles) == 1 and not articles[0].title:
         lines.append(f"note: no heading at level {level}; document left whole")
     lines.append("heading levels in document:")
-    counts = heading_counts(fragment)
+    counts = heading_counts(doc.fragment)
     if counts:
         for h_level, count in sorted(counts.items()):
             lines.append(f"  h{h_level}: {count}")

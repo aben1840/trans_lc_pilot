@@ -10,7 +10,13 @@ import argparse
 import sys
 import traceback
 
-from .docproj import DocProj, heading_counts, presentation, read, split_by_headings
+from .docproj import (
+    SourceDoc,
+    heading_counts,
+    presentation,
+    read,
+    split_by_headings,
+)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -78,14 +84,14 @@ def _run_document_action(args: argparse.Namespace) -> int:
 
     path = args.list_levels or args.convert or args.split
     try:
-        proj = read(path)
+        doc = read(path)
         if args.list_levels:
-            return _list_levels(proj)
+            return _list_levels(doc)
         elif args.convert:
-            return _convert_document(proj, not args.quiet)
+            return _convert_document(doc, not args.quiet)
         else:
             return _split_document(
-                proj,
+                doc,
                 1 if args.level is None else args.level,
                 not args.quiet,
             )
@@ -97,19 +103,19 @@ def _run_document_action(args: argparse.Namespace) -> int:
         return 1
 
 
-def _list_levels(proj: DocProj) -> int:
-    """Print the heading levels present in a projection's source.
+def _list_levels(doc: SourceDoc) -> int:
+    """Print the heading levels present in a document's HTML fragment.
 
     Reads only — nothing is written anywhere.
 
     Args:
-        proj: Projection whose source is re-read for headings.
+        doc: Source document whose fragment is scanned for headings.
 
     Returns:
         int: Always ``0``. A document with no headings at all is a
         valid document, not a failure.
     """
-    _print_levels(heading_counts(proj.source_fragment()))
+    _print_levels(heading_counts(doc.fragment))
     return 0
 
 
@@ -126,47 +132,46 @@ def _print_levels(counts: dict[int, int]) -> None:
         print(f"h{level}: {counts[level]}")
 
 
-def _convert_document(proj: DocProj, open_after: bool) -> int:
-    """Convert a projection's source docx to HTML and report where it went.
+def _convert_document(doc: SourceDoc, open_after: bool) -> int:
+    """Convert a source docx to HTML and report where it went.
 
     This is the raw mammoth conversion of the source — the document as a
-    reader sees it — not the tabular view of the parsed projection.
+    reader sees it.
 
     Args:
-        proj: Projection whose source is to be converted.
+        doc: Source document to convert.
         open_after: Whether to open the written HTML in the browser.
 
     Returns:
         int: ``0`` on success.
     """
-    path = presentation.write_source_html(proj)
-    print(f"source: {proj.source_path}")
+    path = presentation.write_source_html(doc)
+    print(f"source: {doc.path}")
     print(f"html: {path}")
     if open_after:
         print(presentation.open_in_browser(path))
     return 0
 
 
-def _split_document(proj: DocProj, level: int, open_after: bool) -> int:
-    """Split a projection, write the pieces, and report what happened.
+def _split_document(doc: SourceDoc, level: int, open_after: bool) -> int:
+    """Split a document, write the pieces, and report what happened.
 
     The report always names the level actually used and every level the
     document has, so a caller that passed no ``--level`` can still see
     what the default chose and what else was available.
 
     Args:
-        proj: Projection to split.
+        doc: Source document to split.
         level: Heading level to split at.
         open_after: Whether to open the index page once it is written.
 
     Returns:
         int: ``0`` on success.
     """
-    fragment = proj.source_fragment()
-    art_list = split_by_headings(fragment, level=level)
-    index_path = presentation.write_articles(proj, level=level)
+    art_list = split_by_headings(doc.fragment, level=level)
+    index_path = presentation.write_articles(doc, level=level)
 
-    print(f"source: {proj.source_path}")
+    print(f"source: {doc.path}")
     print(f"level: {level}")
     print(f"articles: {len(art_list)}")
     if any(article.is_preamble for article in art_list):
@@ -174,7 +179,7 @@ def _split_document(proj: DocProj, level: int, open_after: bool) -> int:
     if len(art_list) == 1 and not art_list[0].title:
         print(f"note: no heading at level {level}; document left whole")
     print("heading levels in document:")
-    _print_levels(heading_counts(fragment))
+    _print_levels(heading_counts(doc.fragment))
     print(f"index: {index_path}")
     if open_after:
         print(presentation.open_in_browser(index_path))

@@ -1,25 +1,31 @@
-"""Document Projection (DocProj): a format-agnostic view of a document.
+"""Document processing: load a docx, split it at headings, write the pieces.
 
-The canonical data lives in :class:`DocProj` (a dataclass). HTML is the
-first concrete rendering; Markdown and JSON are reserved for future
-steps and currently raise :class:`NotImplementedError`.
+:func:`read` pairs a source file with the HTML fragment mammoth
+produces from it; :mod:`~trans_lc_pilot.docproj.html_headings` splits
+that fragment at headings;
+:mod:`~trans_lc_pilot.docproj.presentation` writes the results to disk
+and opens them in a browser.
 
 Typical usage::
 
-    from trans_lc_pilot.docproj import read
+    from trans_lc_pilot.docproj import read, split_by_headings
 
-    proj = read("input.docx")
-    html = proj.render("html")
-    # proj.render("markdown")  # raises NotImplementedError today
+    doc = read("input.docx")
+    articles = split_by_headings(doc.fragment, level=1)
 """
 from __future__ import annotations
 
 from . import html_headings, presentation
-from .document import RENDERERS, Block, DocProj, Renderer, register_renderer
-from .inspection import render_html, render_json, render_markdown
-from .readers import READERS, Reader, read, register_reader
-from .html_headings import (
-    Article,
-    heading_counts,
-    split_by_headings,
-)
+from .article import Article
+from .html_headings import heading_counts, split_by_headings
+from .source import SourceDoc, read
+
+__all__ = [
+    "Article",
+    "SourceDoc",
+    "heading_counts",
+    "html_headings",
+    "presentation",
+    "read",
+    "split_by_headings",
+]
