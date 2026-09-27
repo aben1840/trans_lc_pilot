@@ -9,13 +9,15 @@ from __future__ import annotations
 import argparse
 import sys
 import traceback
+from pathlib import Path
 
 from .docproj import (
+    BundleError,
     SourceDoc,
+    bundle,
     heading_counts,
     presentation,
     read,
-    split_by_headings,
 )
 
 
@@ -31,7 +33,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     Returns:
         argparse.Namespace: Parsed arguments. Exactly one of
-        ``list_levels``, ``convert``, or ``split`` is set.
+        ``list_levels``, ``convert``, ``split``, or ``assemble`` is set.
     """
     parser = argparse.ArgumentParser(prog="trans-lc-pilot")
     action = parser.add_mutually_exclusive_group(required=True)
@@ -48,7 +50,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     action.add_argument(
         "--split",
         metavar="FILE",
-        help="Split FILE into one HTML file per heading and exit.",
+        help="Split FILE into a bundle of HTML pieces and exit.",
+    )
+    action.add_argument(
+        "--assemble",
+        metavar="BUNDLE_DIR",
+        help="Assemble a bundle's pieces into a new docx and exit.",
     )
     parser.add_argument(
         "--level",
@@ -57,30 +64,71 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Heading level for --split (default: 1).",
     )
     parser.add_argument(
+        "--out",
+        metavar="PATH",
+        help="With --split, the bundle directory; with --assemble, the output file.",
+    )
+    parser.add_argument(
+        "--template",
+        metavar="FILE",
+        help="With --assemble, take styles from FILE instead of the bundled copy.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="With --split or --assemble, overwrite existing output.",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
-        help="With --convert or --split, write the output without opening it.",
+        help="With --convert, --split or --assemble, write without opening anything.",
     )
     return parser.parse_args(argv)
 
 
-def _run_document_action(args: argparse.Namespace) -> int:
-    """Run ``--list-levels``, ``--convert`` or ``--split`` against one file.
+def _check_option_combinations(args: argparse.Namespace) -> list[str]:
+    """Report options used with an action they do not belong to.
 
     Args:
-        args: Parsed arguments holding exactly one of those options.
+        args: Parsed arguments.
+
+    Returns:
+        list[str]: One message per invalid combination; empty when every
+        option agrees with the chosen action.
+    """
+    problems: list[str] = []
+    if not args.split and args.level is not None:
+        problems.append("--level requires --split")
+    if not (args.split or args.assemble) and args.out is not None:
+        problems.append("--out requires --split or --assemble")
+    if args.template is not None and not args.assemble:
+        problems.append("--template requires --assemble")
+    if args.force and not (args.split or args.assemble):
+        problems.append("--force requires --split or --assemble")
+    if not (args.convert or args.split or args.assemble) and args.quiet:
+        problems.append("--quiet requires --convert, --split or --assemble")
+    return problems
+
+
+def _run_document_action(args: argparse.Namespace) -> int:
+    """Run one document action against one input.
+
+    Args:
+        args: Parsed arguments holding exactly one of the actions.
 
     Returns:
         int: ``0`` on success, ``1`` on a reported failure. Expected
         failures are printed without a traceback; anything else
         propagates to :func:`main`.
     """
-    if not args.split and args.level is not None:
-        print("error: --level requires --split", file=sys.stderr)
+    problems = _check_option_combinations(args)
+    if problems:
+        for problem in problems:
+            print(f"error: {problem}", file=sys.stderr)
         return 1
-    if not (args.convert or args.split) and args.quiet:
-        print("error: --quiet requires --convert or --split", file=sys.stderr)
-        return 1
+
+    if args.assemble:
+        return _assemble_bundle(args, not args.quiet)
 
     path = args.list_levels or args.convert or args.split
     try:
@@ -94,6 +142,8 @@ def _run_document_action(args: argparse.Namespace) -> int:
                 doc,
                 1 if args.level is None else args.level,
                 not args.quiet,
+                args.out,
+                args.force,
             )
     except FileNotFoundError as exc:
         print(f"error: file not found: {exc}", file=sys.stderr)
@@ -153,8 +203,14 @@ def _convert_document(doc: SourceDoc, open_after: bool) -> int:
     return 0
 
 
-def _split_document(doc: SourceDoc, level: int, open_after: bool) -> int:
-    """Split a document, write the pieces, and report what happened.
+def _split_document(
+    doc: SourceDoc,
+    level: int,
+    open_after: bool,
+    out_dir: str | None,
+    force: bool,
+) -> int:
+    """Split a document into a bundle and report what happened.
 
     The report always names the level actually used and every level the
     document has, so a caller that passed no ``--level`` can still see
@@ -164,26 +220,78 @@ def _split_document(doc: SourceDoc, level: int, open_after: bool) -> int:
         doc: Source document to split.
         level: Heading level to split at.
         open_after: Whether to open the index page once it is written.
+        out_dir: Bundle directory, or ``None`` for the default location.
+        force: Whether to overwrite a bundle directory that is not empty.
 
     Returns:
         int: ``0`` on success.
     """
-    art_list = split_by_headings(doc.fragment, level=level)
-    index_path = presentation.write_articles(doc, level=level)
+    root = Path(out_dir) if out_dir else bundle.default_dir(doc.path, level)
+    record = bundle.write_bundle(doc, level=level, out_dir=root, force=force)
+    index_path = root / bundle.INDEX_NAME
 
     print(f"source: {doc.path}")
     print(f"level: {level}")
-    print(f"articles: {len(art_list)}")
-    if any(article.is_preamble for article in art_list):
+    print(f"articles: {len(record.articles)}")
+    if record.preamble is not None:
         print("preamble: yes (content before the first heading)")
-    if len(art_list) == 1 and not art_list[0].title:
+    if len(record.articles) == 1 and not record.articles[0].title:
         print(f"note: no heading at level {level}; document left whole")
     print("heading levels in document:")
     _print_levels(heading_counts(doc.fragment))
+    print(f"bundle: {root}")
     print(f"index: {index_path}")
     if open_after:
         print(presentation.open_in_browser(index_path))
     return 0
+
+
+def _assemble_bundle(args: argparse.Namespace, open_after: bool) -> int:
+    """Assemble a bundle into a new docx and report what happened.
+
+    Args:
+        args: Parsed arguments holding ``--assemble``.
+        open_after: Whether to open the written docx once it exists.
+
+    Returns:
+        int: ``0`` on success, ``1`` on a reported failure.
+    """
+    root = Path(args.assemble)
+    out_path = Path(args.out) if args.out else bundle.default_output(root)
+    try:
+        result = bundle.assemble_docx(
+            root, out_path, template=args.template, force=args.force
+        )
+    except FileNotFoundError as exc:
+        print(f"error: file not found: {exc}", file=sys.stderr)
+        return 1
+    except (BundleError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"bundle: {root}")
+    print(f"pieces: {result.pieces}")
+    print(f"output: {result.output}")
+    print(_edited_line(result.edited))
+    for message in result.warnings:
+        print(f"warning: {message}")
+    if open_after:
+        print(presentation.open_in_browser(result.output))
+    return 0
+
+
+def _edited_line(edited: tuple[int, ...]) -> str:
+    """Describe which pieces differ from the hash taken at split time.
+
+    Args:
+        edited: Numbers of the pieces that were touched.
+
+    Returns:
+        str: A line naming them, or stating that none changed.
+    """
+    if not edited:
+        return "edited: none (every piece still matches its split-time hash)"
+    return "edited: " + ", ".join(f"{number:03d}" for number in edited)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -193,7 +301,8 @@ def main(argv: list[str] | None = None) -> int:
 
         trans-lc-pilot --list-levels FILE
         trans-lc-pilot --convert FILE [--quiet]
-        trans-lc-pilot --split FILE [--level N] [--quiet]
+        trans-lc-pilot --split FILE [--level N] [--out DIR] [--quiet]
+        trans-lc-pilot --assemble BUNDLE_DIR [--out FILE] [--quiet]
 
     Args:
         argv: Optional argument vector excluding the program name;

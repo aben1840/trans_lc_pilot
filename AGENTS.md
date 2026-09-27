@@ -34,7 +34,7 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 项目采用 `src/` 布局的 Python 包。所有应用代码位于 `src/trans_lc_pilot/` 下，分为两个平行消费侧和一个共享能力内核：
 
-- `docproj/` — 文档处理内核。`source.py`（加载 docx 并经 mammoth 转为 HTML 片段）、`html_headings.py`（按标题拆分）、`article.py`（`Article` 数据模型）、`presentation.py`（写入 HTML、打开浏览器）。两侧共用，**不依赖** LangChain。
+- `docproj/` — 文档处理内核。`bundle.py` 是汇聚点：`Bundle` 模型、目录布局（manifest、模板副本、索引页、可编辑片段）、`validate`，以及两个方向的操作——`write_bundle`（把一份文档分割成 bundle）与 `assemble_docx`（把 bundle 组装回新 docx）。支撑模块：分割侧 `source.py`（加载 docx 并经 mammoth 转为 HTML 片段）、`html_headings.py`（按标题拆分）、`article.py`（`Article` 数据模型）；组装侧 `docx_styles.py`（解析模板样式，标题按大纲级别映射）、`docx_body.py`（HTML 元素 → docx 正文）。`presentation.py` 只负责 HTML 序列化与打开文件。两侧共用，**不依赖** LangChain。
 - `cli.py` — docx 专用 argparse 入口（`trans-lc-pilot` 脚本）。只处理 `--list-levels`、`--convert`、`--split` 三个分支，**无 LLM 依赖**。
 - `langchain_agent/` — 独立 LangChain agent 运行时（`trans-lc-pilot-agent` 脚本）。自包含：`config.py`（Settings + load_settings）、`prompt.py`（system prompt）、`tools.py`（`@tool` 注册）、`agent.py`（build_llm / build_agent / run_once）、`repl.py`（交互式 REPL）、`entry.py`（独立 CLI 入口）。
 
@@ -48,7 +48,8 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 - `uv sync` — 将依赖安装/锁定到本地 `.venv`。
 - `uv run trans-lc-pilot --list-levels FILE` — 报告标题级别，只读不写。
-- `uv run trans-lc-pilot --split FILE --level N` — 按标题拆分 docx，无 LLM 依赖。
+- `uv run trans-lc-pilot --split FILE --level N [--out DIR]` — 按标题拆分成一个 bundle，无 LLM 依赖。默认落在 `<CWD>/bundles/<源文件名>-h<级别>/`；已有内容的目录需 `--force` 才覆盖。
+- `uv run trans-lc-pilot --assemble BUNDLE_DIR [--out FILE] [--template FILE]` — 把 bundle 的片段组装回新 docx，样式取自 bundle 内的模板副本。无 LLM 依赖。
 - `uv run trans-lc-pilot-agent "prompt"` — 一次性调用 LangChain agent（需 API key）。
 - `uv run trans-lc-pilot-agent` — 启动 LangChain agent 交互式 REPL（需 API key）。
 - 只有 `trans-lc-pilot-agent` 需要环境变量：`cp .env.example .env`，填写 `OPENAI_API_KEY`。`trans-lc-pilot` 的 docx 操作不需要 `.env`。
@@ -98,5 +99,6 @@ AGENTS.md                       ← 本文档：开发协作指南
 ## 安全与配置提示
 
 - 绝不提交 `.env`；它已被 git 忽略。只有 `.env.example` 属于仓库。
+- bundle 内含源文档的副本（`template.docx`），因此 `bundles/` 已被 git 忽略——避免把用户的文档提交进仓库。`.tmp/` 同样被忽略。
 - `trans-lc-pilot-agent` 运行时需要 `OPENAI_API_KEY` —— 缺失时 `langchain_agent/agent.py` 中的 `build_llm` 会抛出异常。`trans-lc-pilot` 的 docx 操作不需要。
 - `OPENAI_BASE_URL` 可指向兼容的本地或托管端点；留空则使用 OpenAI。

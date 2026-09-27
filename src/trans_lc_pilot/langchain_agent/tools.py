@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.tools import tool
 
 from trans_lc_pilot.docproj import (
+    bundle,
     heading_counts,
     presentation,
     read,
-    split_by_headings,
 )
 
 
@@ -86,39 +87,45 @@ def convert_docx_to_html(file_path: str, open_browser: bool = True) -> str:
 
 @tool
 def split_docx_by_headings(
-    file_path: str, level: int = 1, open_browser: bool = True
+    file_path: str, level: int = 1, output_dir: str = "", open_browser: bool = True
 ) -> str:
-    """Split a docx file into one HTML file per heading at the given level.
+    """Split a docx file into a bundle of HTML pieces, one per heading.
 
-    Each article gets its own HTML file plus an ``index.html`` that links
-    them all. The directory and files land in ``.tmp/`` under the repo
-    root. Content before the first matching heading becomes a preamble
-    file named ``000-preamble.html``.
+    The bundle is a directory holding the pieces, a manifest recording
+    their order, an index page linking them, and a copy of the source
+    document that later supplies the styles when the pieces are
+    assembled back into a docx. Content before the first matching
+    heading becomes a preamble file named ``000-preamble.html``.
 
     Args:
         file_path: Path to the .docx file to split.
         level: Heading level to split on, 1-6. Always run
             ``list_docx_heading_levels`` first to know what levels exist.
+        output_dir: Bundle directory. Empty (the default) uses
+            ``<cwd>/bundles/<source-name>-h<level>``, and never
+            overwrites a directory that already holds files.
         open_browser: Whether to open the index page in the default
             browser after writing. Defaults to ``True``.
 
     Returns:
         str: Summary of what was written — source path, level used,
-        article count, available heading levels, index path, and an
-        optional note about preamble or "no heading at this level".
+        article count, available heading levels, bundle directory, index
+        path, and an optional note about preamble or "no heading at this
+        level".
     """
     doc = read(file_path)
-    articles = split_by_headings(doc.fragment, level=level)
-    index_path = presentation.write_articles(doc, level=level)
+    root = Path(output_dir) if output_dir else bundle.default_dir(doc.path, level)
+    record = bundle.write_bundle(doc, level=level, out_dir=root)
+    index_path = root / bundle.INDEX_NAME
 
     lines: list[str] = [
         f"source: {doc.path}",
         f"level: {level}",
-        f"articles: {len(articles)}",
+        f"articles: {len(record.articles)}",
     ]
-    if any(article.is_preamble for article in articles):
+    if record.preamble is not None:
         lines.append("preamble: yes (content before the first heading)")
-    if len(articles) == 1 and not articles[0].title:
+    if len(record.articles) == 1 and not record.articles[0].title:
         lines.append(f"note: no heading at level {level}; document left whole")
     lines.append("heading levels in document:")
     counts = heading_counts(doc.fragment)
@@ -127,9 +134,67 @@ def split_docx_by_headings(
             lines.append(f"  h{h_level}: {count}")
     else:
         lines.append("  no headings found")
+    lines.append(f"bundle: {root}")
     lines.append(f"index: {index_path}")
     if open_browser:
         lines.append(presentation.open_in_browser(index_path))
+    return "\n".join(lines)
+
+
+@tool
+def assemble_docx_from_bundle(
+    bundle_dir: str,
+    output_path: str = "",
+    template_path: str = "",
+    force: bool = False,
+    open_browser: bool = True,
+) -> str:
+    """Assemble a bundle's HTML pieces into a new docx.
+
+    The document is rebuilt from the pieces in the order the bundle's
+    manifest gives, with its styles taken from the bundle's copy of the
+    original document, so page setup, headers, footers and theme
+    survive. Whatever the HTML cannot express does not — report every
+    ``warning:`` line verbatim, because those name what was lost.
+
+    The source docx is never modified; the output is a new file.
+
+    Args:
+        bundle_dir: The bundle directory ``split_docx_by_headings``
+            wrote; it holds the manifest that defines the order.
+        output_path: Where to write the docx. Empty (the default) uses
+            ``<cwd>/<bundle-name>.docx``.
+        template_path: A docx to take styles from instead of the bundle's
+            copy of the original. Empty (the default) uses that copy.
+        force: Overwrite ``output_path`` when it already exists.
+        open_browser: Whether to open the written docx in the default
+            handler after writing. Defaults to ``True``.
+
+    Returns:
+        str: Bundle, piece count, output path, which pieces were edited
+        since the split, and one ``warning:`` line per construct that
+        could not be carried over.
+    """
+    root = Path(bundle_dir)
+    out_path = Path(output_path) if output_path else bundle.default_output(root)
+    result = bundle.assemble_docx(
+        root, out_path, template=template_path or None, force=force
+    )
+
+    lines: list[str] = [
+        f"bundle: {root}",
+        f"pieces: {result.pieces}",
+        f"output: {result.output}",
+    ]
+    if result.edited:
+        lines.append(
+            "edited: " + ", ".join(f"{number:03d}" for number in result.edited)
+        )
+    else:
+        lines.append("edited: none (every piece still matches its split-time hash)")
+    lines.extend(f"warning: {message}" for message in result.warnings)
+    if open_browser:
+        lines.append(presentation.open_in_browser(result.output))
     return "\n".join(lines)
 
 
@@ -145,4 +210,5 @@ def default_tools() -> list:
         list_docx_heading_levels,
         convert_docx_to_html,
         split_docx_by_headings,
+        assemble_docx_from_bundle,
     ]

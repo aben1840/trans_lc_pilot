@@ -30,7 +30,7 @@ def split_by_headings(fragment: str, level: int = 1) -> list[Article]:
         list[Article]: Pieces in document order.
     """
     soup = BeautifulSoup(fragment, "html.parser")
-    nodes = [node for node in soup.children if _is_significant(node)]
+    nodes = [node for node in soup.children if is_significant(node)]
     target = f"h{level}"
     starts = [i for i, node in enumerate(nodes) if _is_heading(node, target)]
 
@@ -78,7 +78,7 @@ def heading_counts(fragment: str) -> dict[int, int]:
     soup = BeautifulSoup(fragment, "html.parser")
     counts: dict[int, int] = {}
     for node in soup.children:
-        if not _is_significant(node):
+        if not is_significant(node):
             continue
         level = _heading_level(node)
         if level is not None:
@@ -86,11 +86,13 @@ def heading_counts(fragment: str) -> dict[int, int]:
     return counts
 
 
-def _is_significant(node: object) -> bool:
+def is_significant(node: object) -> bool:
     """Whether a top-level node carries content worth keeping.
 
     Whitespace-only text nodes between tags are dropped so the
-    serialized output has no stray blank lines.
+    serialized output has no stray blank lines. Public because the
+    rebuild side (:mod:`trans_lc_pilot.docproj.docx_body`) must agree
+    with the splitter on what counts as a top-level node.
 
     Args:
         node: A child of the parsed fragment.

@@ -55,7 +55,8 @@ allowed-tools: Bash(uv run trans-lc-pilot *)
 
 ## 注意事项
 
-- 输出文件存放在 `CWD/.tmp/` 下：`--convert` 生成一个 `docproj-source-XXXX.html`，`--split` 生成一个 `articles-XXXX/` 目录，里面包含每个片段对应的文件以及一个链接所有片段的 `index.html`。名称是随机的，也不会自动清理。两者都会在各自的步骤中自动在浏览器打开——文档在第 2 步，索引页在第 5 步——加 `--quiet` 可以抑制打开。
-- 拆分产出的是 HTML，不是 docx。
+- `--convert` 的预览写在项目根目录的 `.tmp/` 下（`docproj-source-XXXX.html`，名称随机，不会自动清理）。`--split` 写出的则是一个持久的工作目录：`CWD/bundles/<源文件名>-h<级别>/`，内含 `manifest.json`（片段顺序的唯一真相来源）、`template.docx`（源文档副本）、`index.html` 以及各片段 HTML。索引页会在第 5 步自动打开；加 `--quiet` 可以抑制打开。
+- **目标 bundle 目录已有内容时，`--split` 会被拒绝**，除非加 `--force`。这是为了避免静默覆盖用户已经编辑过的片段——遇到该错误时先问用户是保留旧片段还是另指定 `--out` 目录，不要直接加 `--force`。
+- 拆分产出的是 HTML，不是 docx。用户编辑片段之后，用 `uv run trans-lc-pilot --assemble <bundle 目录>` 可以把它们组装回一个新的 docx，样式取自 bundle 内的模板副本；该命令会打印 `warning:` 行说明哪些内容无法承载，必须原样转述。
 - `--level` 只接受 1–6 之间的数字；其他值会在 argparse 校验阶段就被拒绝，不会触碰文档。
 - 失败时会打印 `error: ...` 并以非零状态码退出。直接把错误信息转告用户，不要自己猜测路径后盲目重试。

@@ -1,10 +1,11 @@
-"""Document processing: load a docx, split it at headings, write the pieces.
+"""Document processing: load a docx, split it into a bundle, assemble it back.
 
-:func:`read` pairs a source file with the HTML fragment mammoth
-produces from it; :mod:`~trans_lc_pilot.docproj.html_headings` splits
-that fragment at headings;
-:mod:`~trans_lc_pilot.docproj.presentation` writes the results to disk
-and opens them in a browser.
+:func:`read` pairs a source file with the HTML fragment mammoth produces
+from it; :mod:`~trans_lc_pilot.docproj.html_headings` splits that
+fragment at headings; :mod:`~trans_lc_pilot.docproj.bundle` persists a
+split as a directory of editable pieces whose association is recorded in
+a manifest; :mod:`~trans_lc_pilot.docproj.assembly` rebuilds a docx from
+such a bundle, taking its styles from the bundled template.
 
 Typical usage::
 
@@ -15,17 +16,42 @@ Typical usage::
 """
 from __future__ import annotations
 
-from . import html_headings, presentation
+from . import bundle, docx_body, docx_styles, html_headings, presentation
 from .article import Article
+from .bundle import (
+    AssemblyResult,
+    Bundle,
+    BundleError,
+    Findings,
+    PieceEntry,
+    TemplateRef,
+    assemble_docx,
+    read_bundle,
+    validate,
+    write_bundle,
+)
 from .html_headings import heading_counts, split_by_headings
 from .source import SourceDoc, read
 
 __all__ = [
     "Article",
+    "AssemblyResult",
+    "Bundle",
+    "BundleError",
+    "Findings",
+    "PieceEntry",
     "SourceDoc",
+    "TemplateRef",
+    "assemble_docx",
+    "bundle",
+    "docx_body",
+    "docx_styles",
     "heading_counts",
     "html_headings",
     "presentation",
     "read",
+    "read_bundle",
     "split_by_headings",
+    "validate",
+    "write_bundle",
 ]

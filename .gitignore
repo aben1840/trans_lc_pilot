@@ -11,4 +11,5 @@ build/
 .mypy_cache/
 .ruff_cache/
 .tmp/
+bundles/
 .vscode/settings.json
