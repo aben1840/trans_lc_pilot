@@ -34,7 +34,7 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 项目采用 `src/` 布局的 Python 包。所有应用代码位于 `src/trans_lc_pilot/` 下，分为两个平行消费侧和一个共享能力内核：
 
-- `docproj/` — 文档处理内核。`bundle.py` 是汇聚点：`Bundle` 模型、目录布局（manifest、模板副本、索引页、可编辑片段）、`validate`，以及两个方向的操作——`write_bundle`（把一份文档分割成 bundle）与 `assemble_docx`（把 bundle 组装回新 docx）。支撑模块：分割侧 `source.py`（加载 docx 并经 mammoth 转为 HTML 片段）、`html_headings.py`（按标题拆分）、`article.py`（`Article` 数据模型）；组装侧 `docx_styles.py`（解析模板样式，标题按大纲级别映射）、`docx_body.py`（HTML 元素 → docx 正文）。`presentation.py` 只负责 HTML 序列化与打开文件。两侧共用，**不依赖** LangChain。
+- `docproj/` — 文档处理内核。`bundle.py` 是汇聚点：`Bundle` 模型、目录布局（manifest、模板副本、索引页、可编辑片段）、`validate`，以及两个方向的操作——`write_bundle`（把一份文档分割成 bundle）与 `assemble_docx`（把 bundle 组装回新 docx）。支撑模块：分割侧 `source_doc.py`（`SourceDoc`：加载 docx 并经 mammoth 转为 HTML 片段）、`html_headings.py`（按标题拆分）、`article.py`（`Article` 数据模型）；组装侧 `docx_styles.py`（解析模板样式，标题按大纲级别映射）、`docx_body.py`（HTML 元素 → docx 正文）。`presentation.py` 只负责 HTML 序列化与打开文件。两侧共用，**不依赖** LangChain。
 - `cli.py` — docx 专用 argparse 入口（`trans-lc-pilot` 脚本）。只处理 `--list-levels`、`--convert`、`--split` 三个分支，**无 LLM 依赖**。
 - `langchain_agent/` — 独立 LangChain agent 运行时（`trans-lc-pilot-agent` 脚本）。自包含：`config.py`（Settings + load_settings）、`prompt.py`（system prompt）、`tools.py`（`@tool` 注册）、`agent.py`（build_llm / build_agent / run_once）、`repl.py`（交互式 REPL）、`entry.py`（独立 CLI 入口）。
 
@@ -61,7 +61,7 @@ AGENTS.md                       ← 本文档：开发协作指南
 - Python ≥ 3.12。每个模块以 `from __future__ import annotations` 开头。
 - 所有公开函数和 dataclass 字段都要有类型注解；优先使用现代语法（`str | None`、`list[str]`）。
 - 模块、函数、变量用 `snake_case`；类用 `PascalCase`（如 `Settings`）。模块文件名用简短名词（`cli.py`、`entry.py`）。
-- 分支用 `if … elif … else` 链表达（例子取自 `docproj/source.py` 的 `read`）。
+- 分支用 `if … elif … else` 链表达（例子取自 `docproj/source_doc.py` 的 `read`）。
   - 优先这样写：
 
     ```python

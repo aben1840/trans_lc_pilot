@@ -4,8 +4,8 @@
 from it; :mod:`~trans_lc_pilot.docproj.html_headings` splits that
 fragment at headings; :mod:`~trans_lc_pilot.docproj.bundle` persists a
 split as a directory of editable pieces whose association is recorded in
-a manifest; :mod:`~trans_lc_pilot.docproj.assembly` rebuilds a docx from
-such a bundle, taking its styles from the bundled template.
+a manifest, and rebuilds a docx from one, taking its styles from the
+bundled template.
 
 Typical usage::
 
@@ -31,7 +31,7 @@ from .bundle import (
     write_bundle,
 )
 from .html_headings import heading_counts, split_by_headings
-from .source import SourceDoc, read
+from .source_doc import SourceDoc, read
 
 __all__ = [
     "Article",

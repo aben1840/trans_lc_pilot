@@ -15,7 +15,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .source import SourceDoc
+from .source_doc import SourceDoc
 
 TMP_DIR = Path(__file__).resolve().parents[3] / ".tmp"
 

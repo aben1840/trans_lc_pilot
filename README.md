@@ -42,7 +42,7 @@ so nothing is lost in silence.
 ```
 src/trans_lc_pilot/
   docproj/           # document processing core
-    source.py        # load a docx and convert it to an HTML fragment (mammoth)
+    source_doc.py    # load a docx and convert it to an HTML fragment (mammoth)
     html_headings.py # split a fragment at headings
     article.py       # the Article model
     bundle.py        # the bundle: manifest, template copy, index, pieces, and

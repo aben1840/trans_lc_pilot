@@ -40,7 +40,7 @@ from .docx_body import append_fragment
 from .docx_styles import resolve
 from .html_headings import split_by_headings
 from .presentation import wrap_as_document
-from .source import SourceDoc
+from .source_doc import SourceDoc
 
 MANIFEST_NAME = "manifest.json"
 INDEX_NAME = "index.html"
