@@ -2,41 +2,90 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from trans_lc_pilot.cli import _check_option_combinations, main, parse_args
+import pytest
+
+from trans_lc_pilot.cli import main, parse_args
 from trans_lc_pilot.workspace import Workspace, list_sources
 
 FIXTURE = Path(__file__).parent / "fixtures" / "articles.docx"
 
 
-def problems(argv: list[str]) -> list[str]:
-    """Return the problems reported for one argument vector."""
-    return _check_option_combinations(parse_args(argv))
-
-
 def split(root: Path, *extra: str) -> int:
     """Split the fixture into ``root``; ``--quiet`` keeps the browser shut."""
-    return main(["--split", str(FIXTURE), "--workspace", str(root), "--quiet", *extra])
+    return main(["split", str(FIXTURE), "--workspace", str(root), "--quiet", *extra])
 
 
-def test_options_rejected_with_an_action_they_do_not_belong_to() -> None:
-    assert problems(["--list-levels", "a.docx", "--level", "2"]) != []
-    assert problems(["--list-levels", "a.docx", "--out", "d"]) != []
-    assert problems(["--list-levels", "a.docx", "--workspace", "w"]) != []
-    assert problems(["--list-levels", "a.docx", "--quiet"]) != []
-    assert problems(["--convert", "a.docx", "--out", "o"]) != []
-    assert problems(["--convert", "a.docx", "--force"]) != []
-    assert problems(["--convert", "a.docx", "--template", "t.docx"]) != []
-    assert problems(["--convert", "a.docx", "--as", "n"]) != []
-    assert problems(["--assemble", "b", "--as", "n"]) != []
+def test_a_subcommand_is_required() -> None:
+    with pytest.raises(SystemExit):
+        parse_args([])
 
 
-def test_options_accepted_by_the_actions_that_write() -> None:
-    assert problems(["--convert", "a.docx", "--workspace", "w"]) == []
-    assert problems(["--split", "a.docx", "--workspace", "w"]) == []
-    assert problems(["--split", "a.docx", "--as", "n"]) == []
-    assert problems(["--assemble", "b", "--workspace", "w"]) == []
-    assert problems(["--split", "a.docx"]) == []
-    assert problems(["--assemble", "b"]) == []
+def test_each_subcommand_takes_its_own_input() -> None:
+    assert parse_args(["inspect", "a.docx"]).file == "a.docx"
+    assert parse_args(["preview", "a.docx"]).file == "a.docx"
+    assert parse_args(["split", "a.docx"]).file == "a.docx"
+    assert parse_args(["assemble", "bundle"]).bundle == "bundle"
+
+
+def test_subcommands_accept_the_options_they_declare() -> None:
+    split_args = parse_args(
+        ["split", "a.docx", "--level", "2", "--as", "n", "--force", "--quiet"]
+    )
+
+    assert split_args.level == 2
+    assert split_args.as_name == "n"
+    assert split_args.force is True
+    assert split_args.quiet is True
+    assert split_args.workspace is None
+
+    assemble_args = parse_args(
+        ["assemble", "b", "--out", "o.docx", "--template", "t.docx"]
+    )
+
+    assert assemble_args.out == "o.docx"
+    assert assemble_args.template == "t.docx"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["inspect", "a.docx", "--workspace", "w"],
+        ["inspect", "a.docx", "--quiet"],
+        ["inspect", "a.docx", "--force"],
+        ["preview", "a.docx", "--as", "n"],
+        ["preview", "a.docx", "--force"],
+        ["preview", "a.docx", "--template", "t.docx"],
+        ["split", "a.docx", "--template", "t.docx"],
+        ["split", "a.docx", "--out", "d"],
+        ["assemble", "b", "--as", "n"],
+        ["assemble", "b", "--level", "2"],
+    ],
+)
+def test_options_are_scoped_to_their_subcommand(argv: list[str]) -> None:
+    """argparse rejects these outright — no compatibility matrix needed."""
+    with pytest.raises(SystemExit):
+        parse_args(argv)
+
+
+def test_inspect_carries_no_workspace_at_all() -> None:
+    assert not hasattr(parse_args(["inspect", "a.docx"]), "workspace")
+
+
+def test_help_is_scoped_to_the_subcommand(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["split", "--help"])
+    split_help = capsys.readouterr().out
+
+    with pytest.raises(SystemExit):
+        parse_args(["inspect", "--help"])
+    inspect_help = capsys.readouterr().out
+
+    assert "--level" in split_help
+    assert "--workspace" in split_help
+    assert "--level" not in inspect_help
+    assert "--workspace" not in inspect_help
 
 
 def test_split_creates_the_workspace(tmp_path: Path) -> None:
@@ -74,7 +123,7 @@ def test_assemble_writes_into_the_output_directory(tmp_path: Path) -> None:
 
     code = main(
         [
-            "--assemble",
+            "assemble",
             str(tmp_path / "bundles" / "articles-h1"),
             "--workspace",
             str(tmp_path),
@@ -96,3 +145,26 @@ def test_a_foreign_index_is_left_alone(tmp_path: Path) -> None:
     # The split is the work; the index is derived from it.
     assert code == 0
     assert mine.read_text(encoding="utf-8") == "<html>my own page</html>"
+
+
+def test_preview_does_not_ingest(tmp_path: Path) -> None:
+    code = main(
+        ["preview", str(FIXTURE), "--workspace", str(tmp_path), "--quiet"]
+    )
+
+    assert code == 0
+    assert list((tmp_path / ".tmp").glob("docproj-source-*.html"))
+    assert not (tmp_path / "sources").exists()
+
+
+def test_inspect_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Run from an empty directory: inspect takes no --workspace, so
+    # anything it wrote would land here.
+    monkeypatch.chdir(tmp_path)
+
+    code = main(["inspect", str(FIXTURE)])
+
+    assert code == 0
+    assert list(tmp_path.iterdir()) == []

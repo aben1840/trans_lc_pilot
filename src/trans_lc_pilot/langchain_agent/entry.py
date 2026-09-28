@@ -6,7 +6,7 @@ Usage::
     trans-lc-pilot-agent                                 # interactive REPL
 
 This entry point does **not** handle document-only operations
-(``--split``, ``--convert``, ``--list-levels``). Those live on
+(``inspect``, ``preview``, ``split``, ``assemble``). Those live on
 ``trans-lc-pilot`` (see :mod:`trans_lc_pilot.cli`).
 """
 from __future__ import annotations

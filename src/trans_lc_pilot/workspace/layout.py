@@ -61,7 +61,7 @@ class Workspace:
 
     @property
     def tmp(self) -> Path:
-        """Scratch: the HTML preview ``--convert`` writes."""
+        """Scratch: the HTML preview ``trans-lc-pilot preview`` writes."""
         return self.root / TMP_DIR
 
     @property

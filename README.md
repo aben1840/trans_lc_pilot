@@ -13,13 +13,16 @@ cp .env.example .env   # then fill OPENAI_API_KEY — required by the agent entr
 
 ```bash
 # docx → HTML (no LLM, no API key)
-uv run trans-lc-pilot --list-levels FILE
-uv run trans-lc-pilot --convert FILE [--quiet]
-uv run trans-lc-pilot --split FILE [--level N] [--as NAME] [--out DIR] [--quiet]
-uv run trans-lc-pilot --assemble BUNDLE_DIR [--out FILE] [--template FILE] [--quiet]
+uv run trans-lc-pilot inspect  FILE
+uv run trans-lc-pilot preview  FILE [--workspace DIR] [--quiet]
+uv run trans-lc-pilot split    FILE [--level N] [--as NAME] [--workspace DIR]
+                                    [--quiet] [--force]
+uv run trans-lc-pilot assemble BUNDLE_DIR [--out FILE] [--template FILE]
+                                    [--workspace DIR] [--quiet] [--force]
 
-# --workspace DIR roots every artifact (default: the current working directory)
-uv run trans-lc-pilot --split report.docx --workspace ./work
+# --workspace DIR roots every artifact (default: the current working directory).
+# inspect writes nothing, so it takes no workspace.
+uv run trans-lc-pilot split report.docx --workspace ./work
 
 # LangChain agent (requires OPENAI_API_KEY)
 uv run trans-lc-pilot-agent "split this document at level 2 headings"
@@ -37,7 +40,7 @@ the current working directory by default:
   sources/        the documents that were split, and .origins.json
   bundles/        one directory per (source, heading level)
   output/         docx assembled from a bundle
-  .tmp/           HTML previews written by --convert
+  .tmp/           scratch: the HTML previews `preview` writes
 ```
 
 A split writes a **bundle**: a directory holding one HTML file per piece, an
@@ -50,15 +53,18 @@ Splitting **ingests** the document: it is copied into `sources/` and the bundle
 records that copy, so the bundle stays reproducible after the file you named
 moves or changes. Splitting the same content again is a no-op. Different content
 under a name already taken is refused — pass `--as NAME` to keep both, or delete
-the stored copy to refresh it. `--convert` previews without ingesting.
+the stored copy to refresh it. `preview` does not ingest: a glance does not
+commit the document to the workspace.
 
 A split refuses a bundle directory that already holds files; an assembly refuses
-an existing output file. Both need `--force`.
+an existing output file. Both need `--force`. `split` takes no `--out` — a bundle
+has to live inside the workspace, or the aggregate index would not see it. An
+assembled docx is a deliverable, so `assemble --out` may put it anywhere.
 
 Fidelity is best-effort and bounded by what HTML can express: headings,
 paragraphs, bold/italic/underline, lists, tables and inlined images are carried
 over; numbering, footnotes, text boxes and section breaks are not. Every
-`--assemble` run prints a `warning:` line for each construct it could not carry,
+`assemble` run prints a `warning:` line for each construct it could not carry,
 so nothing is lost in silence. The source docx is never modified.
 
 ## Layout

@@ -15,7 +15,7 @@ allowed-tools: Bash(uv run trans-lc-pilot *)
 2. **转换 docx 并打开预览。** 这一步把文档呈现在用户面前：
 
    ```bash
-   uv run trans-lc-pilot --convert <file>
+   uv run trans-lc-pilot preview <file>
    ```
 
    该命令会将源 docx 转换为 HTML 并在浏览器中打开。告知用户文档已打开。
@@ -26,7 +26,7 @@ allowed-tools: Bash(uv run trans-lc-pilot *)
 3. **检查标题结构——绝不要盲目拆分。**
 
    ```bash
-   uv run trans-lc-pilot --list-levels <file>
+   uv run trans-lc-pilot inspect <file>
    ```
 
    该命令不会写文件，只会输出每个存在的标题级别及其数量，例如 `h2: 5`。
@@ -41,7 +41,7 @@ allowed-tools: Bash(uv run trans-lc-pilot *)
 5. **执行拆分——索引页会自动打开。**
 
    ```bash
-   uv run trans-lc-pilot --split <file> --level N
+   uv run trans-lc-pilot split <file> --level N
    ```
 
    这一步会写出各个片段并打开 `index.html`，用户可以点击查看拆分结果。告知用户索引页已打开。如果无法弹出浏览器（无头环境或远程会话），加 `--quiet` 可抑制打开动作。
@@ -55,9 +55,9 @@ allowed-tools: Bash(uv run trans-lc-pilot *)
 
 ## 注意事项
 
-- 所有制品落在同一个 workspace 根目录下：`--workspace DIR`，默认取 CWD。`--convert` 的预览写进 `<workspace>/.tmp/`（`docproj-source-XXXX.html`，名称随机，不会自动清理）。`--split` 写出的则是一个持久的工作目录：`<workspace>/bundles/<源文件名>-h<级别>/`，内含 `manifest.json`（片段顺序的唯一真相来源）、`template.docx`（源文档副本）、`index.html` 以及各片段 HTML。bundle 的索引页会在第 5 步自动打开；加 `--quiet` 可以抑制打开。`<workspace>/index.html` 是列出全部 bundle 的聚合视图，由 `--split` 与 `--assemble` 自动刷新，**不是**第 5 步打开的那个页面。
-- `--split` 先把源文件入库到 `<workspace>/sources/`，bundle 记录的模板副本来自那份入库文件。再次拆分相同内容是空操作。**入库存放同名但内容不同的文件时会被拒绝**，需要 `--as NAME` 另存新名——遇到该错误时向用户说明冲突，由他们决定别名，不要自行删改 `sources/` 里的文件：那份副本可能是已有 bundle 的来源。
-- **目标 bundle 目录已有内容时，`--split` 会被拒绝**，除非加 `--force`。这是为了避免静默覆盖用户已经编辑过的片段——遇到该错误时先问用户是保留旧片段还是另指定 `--out` 目录，不要直接加 `--force`。
-- 拆分产出的是 HTML，不是 docx。用户编辑片段之后，用 `uv run trans-lc-pilot --assemble <bundle 目录>` 可以把它们组装回一个新的 docx，样式取自 bundle 内的模板副本；该命令会打印 `warning:` 行说明哪些内容无法承载，必须原样转述。
+- 所有制品落在同一个 workspace 根目录下：`--workspace DIR`，默认取 CWD。`preview` 的预览写进 `<workspace>/.tmp/`（`docproj-source-XXXX.html`，名称随机，不会自动清理）。`split` 写出的则是一个持久的工作目录：`<workspace>/bundles/<源文件名>-h<级别>/`，内含 `manifest.json`（片段顺序的唯一真相来源）、`template.docx`（源文档副本）、`index.html` 以及各片段 HTML。bundle 的索引页会在第 5 步自动打开；加 `--quiet` 可以抑制打开。`<workspace>/index.html` 是列出全部 bundle 的聚合视图，由 `split` 与 `assemble` 自动刷新，**不是**第 5 步打开的那个页面。
+- `split` 先把源文件入库到 `<workspace>/sources/`，bundle 记录的模板副本来自那份入库文件。再次拆分相同内容是空操作。**入库存放同名但内容不同的文件时会被拒绝**，需要 `--as NAME` 另存新名——遇到该错误时向用户说明冲突，由他们决定别名，不要自行删改 `sources/` 里的文件：那份副本可能是已有 bundle 的来源。
+- **目标 bundle 目录已有内容时，`split` 会被拒绝**，除非加 `--force`。这是为了避免静默覆盖用户已经编辑过的片段——遇到该错误时先问用户是保留旧片段，还是用 `--as` 另取一个源名（bundle 目录会随之改名，旧片段原样保留），不要直接加 `--force`。`split` 没有 `--out`，bundle 只能落在 workspace 内。
+- 拆分产出的是 HTML，不是 docx。用户编辑片段之后，用 `uv run trans-lc-pilot assemble <bundle 目录>` 可以把它们组装回一个新的 docx，样式取自 bundle 内的模板副本；该命令会打印 `warning:` 行说明哪些内容无法承载，必须原样转述。
 - `--level` 只接受 1–6 之间的数字；其他值会在 argparse 校验阶段就被拒绝，不会触碰文档。
 - 失败时会打印 `error: ...` 并以非零状态码退出。直接把错误信息转告用户，不要自己猜测路径后盲目重试。

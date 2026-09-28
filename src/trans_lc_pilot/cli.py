@@ -1,7 +1,9 @@
 """Command-line entry: docx processing only.
 
-Document actions are mutually exclusive options. All LLM-driven agent
-behaviour lives on ``trans-lc-pilot-agent`` (see
+Each document action is a subcommand, so its options are scoped to it
+and argparse enforces what may be combined — there is no compatibility
+matrix to keep in step with the parser. All LLM-driven agent behaviour
+lives on ``trans-lc-pilot-agent`` (see
 :mod:`trans_lc_pilot.langchain_agent.entry`).
 """
 from __future__ import annotations
@@ -29,157 +31,167 @@ from .workspace import (
 )
 
 
+def _writing_parser() -> argparse.ArgumentParser:
+    """Return the options shared by the subcommands that write.
+
+    Returns:
+        argparse.ArgumentParser: A parent parser, for ``parents=``.
+    """
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument(
+        "--workspace",
+        metavar="DIR",
+        help="Root directory every artifact lands under (default: CWD).",
+    )
+    parent.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Write without opening anything.",
+    )
+    return parent
+
+
+def _overwriting_parser() -> argparse.ArgumentParser:
+    """Return the options shared by the subcommands that overwrite.
+
+    Returns:
+        argparse.ArgumentParser: A parent parser, for ``parents=``.
+    """
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing output.",
+    )
+    return parent
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     """Parse command-line arguments.
-
-    Document actions are options rather than subcommands so a caller
-    can invoke any one of them directly.
 
     Args:
         argv: Argument vector excluding the program name; typically
             ``sys.argv[1:]``.
 
     Returns:
-        argparse.Namespace: Parsed arguments. Exactly one of
-        ``list_levels``, ``convert``, ``split``, or ``assemble`` is set.
+        argparse.Namespace: Parsed arguments. ``command`` names the
+        subcommand that ran; ``file`` or ``bundle`` holds its input.
     """
     parser = argparse.ArgumentParser(prog="trans-lc-pilot")
-    action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument(
-        "--list-levels",
-        metavar="FILE",
+    actions = parser.add_subparsers(dest="command", required=True)
+
+    inspect = actions.add_parser(
+        "inspect",
         help="Print the heading levels in FILE and exit; writes nothing.",
+        description=(
+            "Report how many headings FILE has at each level, so a"
+            " caller can choose what to split on. Reads only: no"
+            " workspace, no output."
+        ),
     )
-    action.add_argument(
-        "--convert",
-        metavar="FILE",
+    inspect.add_argument("file", metavar="FILE")
+
+    preview = actions.add_parser(
+        "preview",
+        parents=[_writing_parser()],
         help="Convert FILE to HTML via mammoth, open it, and exit.",
+        description=(
+            "Convert FILE to the HTML a reader sees, write it to the"
+            " workspace scratch, and open it. A preview is a glance:"
+            " the document is not ingested into sources/."
+        ),
     )
-    action.add_argument(
-        "--split",
-        metavar="FILE",
+    preview.add_argument("file", metavar="FILE")
+
+    split = actions.add_parser(
+        "split",
+        parents=[_writing_parser(), _overwriting_parser()],
         help="Split FILE into a bundle of HTML pieces and exit.",
+        description=(
+            "Ingest FILE into the workspace, then split it at headings"
+            " of one level into a bundle: one editable HTML file per"
+            " piece, a manifest recording their order, an index page,"
+            " and a copy of the document that later supplies the"
+            " styles. The bundle lands at"
+            " <workspace>/bundles/<source-stem>-h<level>."
+        ),
     )
-    action.add_argument(
-        "--assemble",
-        metavar="BUNDLE_DIR",
-        help="Assemble a bundle's pieces into a new docx and exit.",
-    )
-    parser.add_argument(
+    split.add_argument("file", metavar="FILE")
+    split.add_argument(
         "--level",
         type=int,
         choices=range(1, 7),
-        help="Heading level for --split (default: 1).",
+        help="Heading level to split on (default: 1).",
     )
-    parser.add_argument(
-        "--out",
-        metavar="PATH",
-        help="With --split, the bundle directory; with --assemble, the output file.",
-    )
-    parser.add_argument(
-        "--template",
-        metavar="FILE",
-        help="With --assemble, take styles from FILE instead of the bundled copy.",
-    )
-    parser.add_argument(
-        "--workspace",
-        metavar="DIR",
-        help=(
-            "Root directory every artifact lands under (default: the "
-            "current working directory). Not accepted by --list-levels, "
-            "which writes nothing."
-        ),
-    )
-    parser.add_argument(
+    split.add_argument(
         "--as",
         dest="as_name",
         metavar="NAME",
         help=(
-            "With --split, store the source under NAME in the workspace "
-            "instead of its own file name. Needed when that name is "
-            "already taken by a different document."
+            "Store the source under NAME in the workspace instead of"
+            " its own file name. Needed when that name is already"
+            " taken by a different document."
         ),
     )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="With --split or --assemble, overwrite existing output.",
+    assemble = actions.add_parser(
+        "assemble",
+        parents=[_writing_parser(), _overwriting_parser()],
+        help="Assemble a bundle's pieces into a new docx and exit.",
+        description=(
+            "Rebuild a bundle's pieces into a docx, in the order its"
+            " manifest gives. The template copy supplies what HTML"
+            " cannot: styles, theme, page setup, headers and footers."
+        ),
     )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="With --convert, --split or --assemble, write without opening anything.",
+    assemble.add_argument("bundle", metavar="BUNDLE_DIR")
+    assemble.add_argument(
+        "--out",
+        metavar="FILE",
+        help="Where to write the docx (default: <workspace>/output/<bundle>.docx).",
+    )
+    assemble.add_argument(
+        "--template",
+        metavar="FILE",
+        help="Take styles from FILE instead of the bundle's own copy.",
     )
     return parser.parse_args(argv)
 
 
-def _check_option_combinations(args: argparse.Namespace) -> list[str]:
-    """Report options used with an action they do not belong to.
+def _workspace(args: argparse.Namespace) -> Workspace:
+    """Return the workspace a writing subcommand should use.
 
     Args:
-        args: Parsed arguments.
+        args: Parsed arguments from a subcommand that takes
+            ``--workspace``.
 
     Returns:
-        list[str]: One message per invalid combination; empty when every
-        option agrees with the chosen action.
+        Workspace: The requested root, or the working directory.
     """
-    problems: list[str] = []
-    if not args.split and args.level is not None:
-        problems.append("--level requires --split")
-    if not (args.split or args.assemble) and args.out is not None:
-        problems.append("--out requires --split or --assemble")
-    if args.template is not None and not args.assemble:
-        problems.append("--template requires --assemble")
-    if args.workspace is not None and args.list_levels:
-        problems.append("--workspace requires --convert, --split or --assemble")
-    if args.as_name is not None and not args.split:
-        problems.append("--as requires --split")
-    if args.force and not (args.split or args.assemble):
-        problems.append("--force requires --split or --assemble")
-    if not (args.convert or args.split or args.assemble) and args.quiet:
-        problems.append("--quiet requires --convert, --split or --assemble")
-    return problems
+    return Workspace.at(args.workspace or Path.cwd())
 
 
 def _run_document_action(args: argparse.Namespace) -> int:
-    """Run one document action against one input.
+    """Run the chosen subcommand against its input.
 
     Args:
-        args: Parsed arguments holding exactly one of the actions.
+        args: Parsed arguments holding one subcommand's options.
 
     Returns:
         int: ``0`` on success, ``1`` on a reported failure. Expected
         failures are printed without a traceback; anything else
         propagates to :func:`main`.
     """
-    problems = _check_option_combinations(args)
-    if problems:
-        for problem in problems:
-            print(f"error: {problem}", file=sys.stderr)
-        return 1
+    if args.command == "assemble":
+        return _assemble(args)
 
-    workspace = Workspace.at(args.workspace or Path.cwd())
-
-    if args.assemble:
-        return _assemble_bundle(args, not args.quiet, workspace)
-
-    path = args.list_levels or args.convert or args.split
     try:
-        doc = read(path)
-        if args.list_levels:
-            return _list_levels(doc)
-        elif args.convert:
-            return _convert_document(doc, not args.quiet, workspace)
+        doc = read(args.file)
+        if args.command == "inspect":
+            return _inspect(doc)
+        elif args.command == "preview":
+            return _preview(doc, args)
         else:
-            return _split_document(
-                doc,
-                1 if args.level is None else args.level,
-                not args.quiet,
-                args.out,
-                args.force,
-                workspace,
-                args.as_name,
-            )
+            return _split(doc, args)
     except FileNotFoundError as exc:
         print(f"error: file not found: {exc}", file=sys.stderr)
         return 1
@@ -188,11 +200,11 @@ def _run_document_action(args: argparse.Namespace) -> int:
         return 1
 
 
-def _list_levels(doc: SourceDoc) -> int:
+def _inspect(doc: SourceDoc) -> int:
     """Print the heading levels present in a document's HTML fragment.
 
-    Reads only — nothing is written anywhere, which is why this action
-    takes no workspace.
+    Reads only — nothing is written anywhere, which is why this
+    subcommand takes no workspace.
 
     Args:
         doc: Source document whose fragment is scanned for headings.
@@ -218,38 +230,30 @@ def _print_levels(counts: dict[int, int]) -> None:
         print(f"h{level}: {counts[level]}")
 
 
-def _convert_document(doc: SourceDoc, open_after: bool, workspace: Workspace) -> int:
+def _preview(doc: SourceDoc, args: argparse.Namespace) -> int:
     """Convert a source docx to HTML and report where it went.
 
-    This is the raw mammoth conversion of the source — the document as a
-    reader sees it. It writes to the workspace scratch only: a preview
-    is a glance, so it does not ingest the document into ``sources/``.
+    This is the raw mammoth conversion of the source — the document as
+    a reader sees it. It writes to the workspace scratch only: a
+    preview is a glance, so it does not ingest the document into
+    ``sources/``.
 
     Args:
         doc: Source document to convert.
-        open_after: Whether to open the written HTML in the browser.
-        workspace: Whose scratch directory receives the preview.
+        args: Parsed ``preview`` arguments.
 
     Returns:
         int: ``0`` on success.
     """
-    path = write_preview(doc, workspace)
+    path = write_preview(doc, _workspace(args))
     print(f"source: {doc.path}")
     print(f"html: {path}")
-    if open_after:
+    if not args.quiet:
         print(presentation.open_in_browser(path))
     return 0
 
 
-def _split_document(
-    doc: SourceDoc,
-    level: int,
-    open_after: bool,
-    out_dir: str | None,
-    force: bool,
-    workspace: Workspace,
-    as_name: str | None,
-) -> int:
+def _split(doc: SourceDoc, args: argparse.Namespace) -> int:
     """Split a document into a bundle and report what happened.
 
     The document is ingested into the workspace first: a bundle records
@@ -262,20 +266,18 @@ def _split_document(
 
     Args:
         doc: Source document to split.
-        level: Heading level to split at.
-        open_after: Whether to open the index page once it is written.
-        out_dir: Bundle directory, or ``None`` for the workspace default.
-        force: Whether to overwrite a bundle directory that is not empty.
-        workspace: Whose ``sources/`` and ``bundles/`` hold the result.
-        as_name: Name to store the source under, or ``None`` for its own.
+        args: Parsed ``split`` arguments.
 
     Returns:
         int: ``0`` on success.
     """
-    source = ingest(workspace, doc.path, as_name=as_name)
+    workspace = _workspace(args)
+    source = ingest(workspace, doc.path, as_name=args.as_name)
     doc = replace(doc, path=source.path)
-    root = Path(out_dir) if out_dir else workspace.bundle_dir(doc.path.name, level)
-    record = bundle.write_bundle(doc, level=level, out_dir=root, force=force)
+
+    level = 1 if args.level is None else args.level
+    root = workspace.bundle_dir(doc.path.name, level)
+    record = bundle.write_bundle(doc, level=level, out_dir=root, force=args.force)
     index_path = root / bundle.INDEX_NAME
 
     print(f"source: {source.origin}")
@@ -291,28 +293,25 @@ def _split_document(
     _print_levels(heading_counts(doc.fragment))
     print(f"bundle: {root}")
     print(f"index: {index_path}")
-    _refresh_index(workspace, force)
-    if open_after:
+    _refresh_index(workspace, args.force)
+    if not args.quiet:
         # The bundle's own index lists the pieces; the workspace index
         # above it lists bundles, so it is not what a split should open.
         print(presentation.open_in_browser(index_path))
     return 0
 
 
-def _assemble_bundle(
-    args: argparse.Namespace, open_after: bool, workspace: Workspace
-) -> int:
+def _assemble(args: argparse.Namespace) -> int:
     """Assemble a bundle into a new docx and report what happened.
 
     Args:
-        args: Parsed arguments holding ``--assemble``.
-        open_after: Whether to open the written docx once it exists.
-        workspace: Whose ``output/`` directory receives the default path.
+        args: Parsed ``assemble`` arguments.
 
     Returns:
         int: ``0`` on success, ``1`` on a reported failure.
     """
-    root = Path(args.assemble)
+    workspace = _workspace(args)
+    root = Path(args.bundle)
     out_path = Path(args.out) if args.out else workspace.output_path(root)
     try:
         result = bundle.assemble_docx(
@@ -332,9 +331,23 @@ def _assemble_bundle(
     for message in result.warnings:
         print(f"warning: {message}")
     _refresh_index(workspace, args.force)
-    if open_after:
+    if not args.quiet:
         print(presentation.open_in_browser(result.output))
     return 0
+
+
+def _edited_line(edited: tuple[int, ...]) -> str:
+    """Describe which pieces differ from the hash taken at split time.
+
+    Args:
+        edited: Numbers of the pieces that were touched.
+
+    Returns:
+        str: A line naming them, or stating that none changed.
+    """
+    if not edited:
+        return "edited: none (every piece still matches its split-time hash)"
+    return "edited: " + ", ".join(f"{number:03d}" for number in edited)
 
 
 def _refresh_index(workspace: Workspace, force: bool) -> None:
@@ -354,32 +367,20 @@ def _refresh_index(workspace: Workspace, force: bool) -> None:
         print(f"warning: workspace index not written: {exc}")
 
 
-def _edited_line(edited: tuple[int, ...]) -> str:
-    """Describe which pieces differ from the hash taken at split time.
-
-    Args:
-        edited: Numbers of the pieces that were touched.
-
-    Returns:
-        str: A line naming them, or stating that none changed.
-    """
-    if not edited:
-        return "edited: none (every piece still matches its split-time hash)"
-    return "edited: " + ", ".join(f"{number:03d}" for number in edited)
-
-
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``trans-lc-pilot`` console script.
 
     Document-only operations::
 
-        trans-lc-pilot --list-levels FILE
-        trans-lc-pilot --convert FILE [--quiet]
-        trans-lc-pilot --split FILE [--level N] [--out DIR] [--quiet]
-        trans-lc-pilot --assemble BUNDLE_DIR [--out FILE] [--quiet]
+        trans-lc-pilot inspect  FILE
+        trans-lc-pilot preview  FILE [--workspace DIR] [--quiet]
+        trans-lc-pilot split    FILE [--level N] [--as NAME] [--workspace DIR]
+                                [--quiet] [--force]
+        trans-lc-pilot assemble BUNDLE_DIR [--out FILE] [--template FILE]
+                                [--workspace DIR] [--quiet] [--force]
 
-    Every artifact lands under ``--workspace DIR``, the current working
-    directory by default.
+    Every artifact lands under ``--workspace DIR``, the working
+    directory by default. ``inspect`` writes nothing, so it takes none.
 
     Args:
         argv: Optional argument vector excluding the program name;

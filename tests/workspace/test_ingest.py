@@ -128,7 +128,7 @@ def test_an_unreadable_source_is_refused_before_anything_is_stored(
     text.write_text("not a docx", encoding="utf-8")
     root = tmp_path / "ws"
 
-    code = main(["--split", str(text), "--workspace", str(root), "--quiet"])
+    code = main(["split", str(text), "--workspace", str(root), "--quiet"])
 
     assert code == 1
     assert not (root / "sources").exists()

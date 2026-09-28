@@ -50,7 +50,7 @@ def test_index_escapes_a_name_and_quotes_a_href(tmp_path: Path) -> None:
 
     code = main(
         [
-            "--split",
+            "split",
             str(named),
             "--level",
             "1",

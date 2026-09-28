@@ -1,4 +1,4 @@
-"""The HTML preview ``--convert`` puts in front of a reader.
+"""The HTML preview ``trans-lc-pilot preview`` puts in front of a reader.
 
 Separate from :mod:`trans_lc_pilot.docproj.presentation`, which
 serializes HTML but knows nothing about where a workspace keeps things.

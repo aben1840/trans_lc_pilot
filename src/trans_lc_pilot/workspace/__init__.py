@@ -12,7 +12,7 @@ Layout::
       sources/          ingested source documents, and .origins.json
       bundles/          one directory per (source, heading level)
       output/           docx assembled from a bundle
-      .tmp/             HTML previews written by ``--convert``
+      .tmp/             HTML previews written by ``trans-lc-pilot preview``
 """
 from __future__ import annotations
 

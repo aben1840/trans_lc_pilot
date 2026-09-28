@@ -63,10 +63,10 @@ def list_docx_heading_levels(file_path: str) -> str:
 
 
 @tool
-def convert_docx_to_html(
+def preview_docx(
     file_path: str, workspace: str = "", open_browser: bool = True
 ) -> str:
-    """Convert a docx file to HTML via mammoth.
+    """Convert a docx file to HTML via mammoth and open it for a look.
 
     Produces the document as a reader sees it, preserves empty paragraphs,
     and wraps the fragment in a standalone HTML document. The file lands
@@ -99,7 +99,6 @@ def convert_docx_to_html(
 def split_docx_by_headings(
     file_path: str,
     level: int = 1,
-    output_dir: str = "",
     workspace: str = "",
     as_name: str = "",
     open_browser: bool = True,
@@ -122,7 +121,7 @@ def split_docx_by_headings(
         file_path: Path to the .docx file to split.
         level: Heading level to split on, 1-6. Always run
             ``list_docx_heading_levels`` first to know what levels exist.
-        output_dir: Bundle directory. Empty (the default) uses
+            The bundle lands at
             ``<workspace>/bundles/<source-name>-h<level>``, and never
             overwrites a directory that already holds files.
         workspace: Root directory artifacts land under. Empty (the
@@ -143,7 +142,7 @@ def split_docx_by_headings(
     ws = Workspace.at(workspace or Path.cwd())
     source = ingest(ws, doc.path, as_name=as_name or None)
     doc = replace(doc, path=source.path)
-    root = Path(output_dir) if output_dir else ws.bundle_dir(doc.path.name, level)
+    root = ws.bundle_dir(doc.path.name, level)
     record = bundle.write_bundle(doc, level=level, out_dir=root)
     index_path = root / bundle.INDEX_NAME
 
@@ -263,7 +262,7 @@ def default_tools() -> list:
     return [
         get_current_time,
         list_docx_heading_levels,
-        convert_docx_to_html,
+        preview_docx,
         split_docx_by_headings,
         assemble_docx_from_bundle,
     ]
