@@ -157,34 +157,6 @@ class AssemblyResult:
     warnings: tuple[str, ...]
 
 
-def default_dir(source: str | Path, level: int) -> Path:
-    """Return the default bundle directory for a split.
-
-    Bundles are work products rather than scratch, so they land under the
-    working directory instead of ``.tmp/``; ``bundles/`` is git-ignored.
-
-    Args:
-        source: The document being split.
-        level: Heading level the split uses.
-
-    Returns:
-        Path: ``<cwd>/bundles/<source-stem>-h<level>``.
-    """
-    return Path.cwd() / "bundles" / f"{Path(source).stem}-h{level}"
-
-
-def default_output(bundle_root: str | Path) -> Path:
-    """Return the default output path for assembly.
-
-    Args:
-        bundle_root: The bundle being assembled.
-
-    Returns:
-        Path: ``<cwd>/<bundle-name>.docx``.
-    """
-    return Path.cwd() / f"{Path(bundle_root).name}.docx"
-
-
 def piece_path(root: str | Path, piece: PieceEntry) -> Path:
     """Return the path of ``piece`` inside the bundle at ``root``.
 

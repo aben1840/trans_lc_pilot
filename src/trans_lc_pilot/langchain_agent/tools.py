@@ -1,6 +1,7 @@
 """Tools available to the LangChain agent."""
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -13,6 +14,7 @@ from trans_lc_pilot.docproj import (
     presentation,
     read,
 )
+from trans_lc_pilot.workspace import Workspace, ingest, write_index, write_preview
 
 
 @tool
@@ -61,15 +63,23 @@ def list_docx_heading_levels(file_path: str) -> str:
 
 
 @tool
-def convert_docx_to_html(file_path: str, open_browser: bool = True) -> str:
+def convert_docx_to_html(
+    file_path: str, workspace: str = "", open_browser: bool = True
+) -> str:
     """Convert a docx file to HTML via mammoth.
 
     Produces the document as a reader sees it, preserves empty paragraphs,
-    and wraps the fragment in a standalone HTML document. The file is
-    written to ``.tmp/`` under the repo root.
+    and wraps the fragment in a standalone HTML document. The file lands
+    in the workspace scratch (``<workspace>/.tmp/``) under a fresh random
+    name each call, and is never cleaned up.
+
+    A preview is a glance, so it does not ingest the document: nothing is
+    copied into ``sources/``.
 
     Args:
         file_path: Path to the .docx file to convert.
+        workspace: Root directory artifacts land under. Empty (the
+            default) uses the current working directory.
         open_browser: Whether to open the HTML in the default browser
             after writing. Defaults to ``True``.
 
@@ -78,7 +88,7 @@ def convert_docx_to_html(file_path: str, open_browser: bool = True) -> str:
         browser-open status line.
     """
     doc = read(file_path)
-    path = presentation.write_source_html(doc)
+    path = write_preview(doc, Workspace.at(workspace or Path.cwd()))
     result = f"source: {doc.path}\nhtml: {path}"
     if open_browser:
         result += f"\n{presentation.open_in_browser(path)}"
@@ -87,7 +97,12 @@ def convert_docx_to_html(file_path: str, open_browser: bool = True) -> str:
 
 @tool
 def split_docx_by_headings(
-    file_path: str, level: int = 1, output_dir: str = "", open_browser: bool = True
+    file_path: str,
+    level: int = 1,
+    output_dir: str = "",
+    workspace: str = "",
+    as_name: str = "",
+    open_browser: bool = True,
 ) -> str:
     """Split a docx file into a bundle of HTML pieces, one per heading.
 
@@ -97,13 +112,24 @@ def split_docx_by_headings(
     assembled back into a docx. Content before the first matching
     heading becomes a preamble file named ``000-preamble.html``.
 
+    The document is copied into ``<workspace>/sources/`` first, and the
+    bundle records that copy. Splitting the same document again costs
+    nothing; storing *different* content under a name already taken is
+    refused, so a bundle is never silently rebuilt from another
+    document.
+
     Args:
         file_path: Path to the .docx file to split.
         level: Heading level to split on, 1-6. Always run
             ``list_docx_heading_levels`` first to know what levels exist.
         output_dir: Bundle directory. Empty (the default) uses
-            ``<cwd>/bundles/<source-name>-h<level>``, and never
+            ``<workspace>/bundles/<source-name>-h<level>``, and never
             overwrites a directory that already holds files.
+        workspace: Root directory artifacts land under. Empty (the
+            default) uses the current working directory.
+        as_name: Store the source under this name instead of its own
+            file name. Needed when that name already holds a different
+            document.
         open_browser: Whether to open the index page in the default
             browser after writing. Defaults to ``True``.
 
@@ -114,12 +140,17 @@ def split_docx_by_headings(
         level".
     """
     doc = read(file_path)
-    root = Path(output_dir) if output_dir else bundle.default_dir(doc.path, level)
+    ws = Workspace.at(workspace or Path.cwd())
+    source = ingest(ws, doc.path, as_name=as_name or None)
+    doc = replace(doc, path=source.path)
+    root = Path(output_dir) if output_dir else ws.bundle_dir(doc.path.name, level)
     record = bundle.write_bundle(doc, level=level, out_dir=root)
     index_path = root / bundle.INDEX_NAME
 
-    lines: list[str] = [
-        f"source: {doc.path}",
+    lines: list[str] = [f"source: {source.origin}"]
+    if source.stored:
+        lines.append(f"stored: {source.path}")
+    lines += [
         f"level: {level}",
         f"articles: {len(record.articles)}",
     ]
@@ -136,9 +167,28 @@ def split_docx_by_headings(
         lines.append("  no headings found")
     lines.append(f"bundle: {root}")
     lines.append(f"index: {index_path}")
+    _refresh_index(ws, lines)
     if open_browser:
+        # The bundle's index lists the pieces; the workspace index above
+        # it lists bundles, so it is not what a split should open.
         lines.append(presentation.open_in_browser(index_path))
     return "\n".join(lines)
+
+
+def _refresh_index(workspace: Workspace, notices: list[str]) -> None:
+    """Rewrite the workspace index, noting a failure rather than raising.
+
+    The split or assembly is the work; the index is derived from it, so
+    a page that could not be refreshed should be reported, not thrown.
+
+    Args:
+        workspace: Whose index to refresh.
+        notices: Lines to append the warning to.
+    """
+    try:
+        write_index(workspace)
+    except OSError as exc:
+        notices.append(f"warning: workspace index not written: {exc}")
 
 
 @tool
@@ -146,6 +196,7 @@ def assemble_docx_from_bundle(
     bundle_dir: str,
     output_path: str = "",
     template_path: str = "",
+    workspace: str = "",
     force: bool = False,
     open_browser: bool = True,
 ) -> str:
@@ -163,9 +214,11 @@ def assemble_docx_from_bundle(
         bundle_dir: The bundle directory ``split_docx_by_headings``
             wrote; it holds the manifest that defines the order.
         output_path: Where to write the docx. Empty (the default) uses
-            ``<cwd>/<bundle-name>.docx``.
+            ``<workspace>/output/<bundle-name>.docx``.
         template_path: A docx to take styles from instead of the bundle's
             copy of the original. Empty (the default) uses that copy.
+        workspace: Root directory artifacts land under. Empty (the
+            default) uses the current working directory.
         force: Overwrite ``output_path`` when it already exists.
         open_browser: Whether to open the written docx in the default
             handler after writing. Defaults to ``True``.
@@ -176,7 +229,8 @@ def assemble_docx_from_bundle(
         could not be carried over.
     """
     root = Path(bundle_dir)
-    out_path = Path(output_path) if output_path else bundle.default_output(root)
+    ws = Workspace.at(workspace or Path.cwd())
+    out_path = Path(output_path) if output_path else ws.output_path(root)
     result = bundle.assemble_docx(
         root, out_path, template=template_path or None, force=force
     )
@@ -193,6 +247,7 @@ def assemble_docx_from_bundle(
     else:
         lines.append("edited: none (every piece still matches its split-time hash)")
     lines.extend(f"warning: {message}" for message in result.warnings)
+    _refresh_index(ws, lines)
     if open_browser:
         lines.append(presentation.open_in_browser(result.output))
     return "\n".join(lines)

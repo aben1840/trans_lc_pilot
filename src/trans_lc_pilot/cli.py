@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 import traceback
+from dataclasses import replace
 from pathlib import Path
 
 from .docproj import (
@@ -18,6 +19,13 @@ from .docproj import (
     heading_counts,
     presentation,
     read,
+)
+from .workspace import (
+    IngestError,
+    Workspace,
+    ingest,
+    write_index,
+    write_preview,
 )
 
 
@@ -74,6 +82,25 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="With --assemble, take styles from FILE instead of the bundled copy.",
     )
     parser.add_argument(
+        "--workspace",
+        metavar="DIR",
+        help=(
+            "Root directory every artifact lands under (default: the "
+            "current working directory). Not accepted by --list-levels, "
+            "which writes nothing."
+        ),
+    )
+    parser.add_argument(
+        "--as",
+        dest="as_name",
+        metavar="NAME",
+        help=(
+            "With --split, store the source under NAME in the workspace "
+            "instead of its own file name. Needed when that name is "
+            "already taken by a different document."
+        ),
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="With --split or --assemble, overwrite existing output.",
@@ -103,6 +130,10 @@ def _check_option_combinations(args: argparse.Namespace) -> list[str]:
         problems.append("--out requires --split or --assemble")
     if args.template is not None and not args.assemble:
         problems.append("--template requires --assemble")
+    if args.workspace is not None and args.list_levels:
+        problems.append("--workspace requires --convert, --split or --assemble")
+    if args.as_name is not None and not args.split:
+        problems.append("--as requires --split")
     if args.force and not (args.split or args.assemble):
         problems.append("--force requires --split or --assemble")
     if not (args.convert or args.split or args.assemble) and args.quiet:
@@ -127,8 +158,10 @@ def _run_document_action(args: argparse.Namespace) -> int:
             print(f"error: {problem}", file=sys.stderr)
         return 1
 
+    workspace = Workspace.at(args.workspace or Path.cwd())
+
     if args.assemble:
-        return _assemble_bundle(args, not args.quiet)
+        return _assemble_bundle(args, not args.quiet, workspace)
 
     path = args.list_levels or args.convert or args.split
     try:
@@ -136,7 +169,7 @@ def _run_document_action(args: argparse.Namespace) -> int:
         if args.list_levels:
             return _list_levels(doc)
         elif args.convert:
-            return _convert_document(doc, not args.quiet)
+            return _convert_document(doc, not args.quiet, workspace)
         else:
             return _split_document(
                 doc,
@@ -144,11 +177,13 @@ def _run_document_action(args: argparse.Namespace) -> int:
                 not args.quiet,
                 args.out,
                 args.force,
+                workspace,
+                args.as_name,
             )
     except FileNotFoundError as exc:
         print(f"error: file not found: {exc}", file=sys.stderr)
         return 1
-    except (NotImplementedError, OSError) as exc:
+    except (IngestError, NotImplementedError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -156,7 +191,8 @@ def _run_document_action(args: argparse.Namespace) -> int:
 def _list_levels(doc: SourceDoc) -> int:
     """Print the heading levels present in a document's HTML fragment.
 
-    Reads only — nothing is written anywhere.
+    Reads only — nothing is written anywhere, which is why this action
+    takes no workspace.
 
     Args:
         doc: Source document whose fragment is scanned for headings.
@@ -182,20 +218,22 @@ def _print_levels(counts: dict[int, int]) -> None:
         print(f"h{level}: {counts[level]}")
 
 
-def _convert_document(doc: SourceDoc, open_after: bool) -> int:
+def _convert_document(doc: SourceDoc, open_after: bool, workspace: Workspace) -> int:
     """Convert a source docx to HTML and report where it went.
 
     This is the raw mammoth conversion of the source — the document as a
-    reader sees it.
+    reader sees it. It writes to the workspace scratch only: a preview
+    is a glance, so it does not ingest the document into ``sources/``.
 
     Args:
         doc: Source document to convert.
         open_after: Whether to open the written HTML in the browser.
+        workspace: Whose scratch directory receives the preview.
 
     Returns:
         int: ``0`` on success.
     """
-    path = presentation.write_source_html(doc)
+    path = write_preview(doc, workspace)
     print(f"source: {doc.path}")
     print(f"html: {path}")
     if open_after:
@@ -209,8 +247,14 @@ def _split_document(
     open_after: bool,
     out_dir: str | None,
     force: bool,
+    workspace: Workspace,
+    as_name: str | None,
 ) -> int:
     """Split a document into a bundle and report what happened.
+
+    The document is ingested into the workspace first: a bundle records
+    that copy as its template, so what it was built from stays put even
+    if the file the caller named later moves or changes.
 
     The report always names the level actually used and every level the
     document has, so a caller that passed no ``--level`` can still see
@@ -220,17 +264,23 @@ def _split_document(
         doc: Source document to split.
         level: Heading level to split at.
         open_after: Whether to open the index page once it is written.
-        out_dir: Bundle directory, or ``None`` for the default location.
+        out_dir: Bundle directory, or ``None`` for the workspace default.
         force: Whether to overwrite a bundle directory that is not empty.
+        workspace: Whose ``sources/`` and ``bundles/`` hold the result.
+        as_name: Name to store the source under, or ``None`` for its own.
 
     Returns:
         int: ``0`` on success.
     """
-    root = Path(out_dir) if out_dir else bundle.default_dir(doc.path, level)
+    source = ingest(workspace, doc.path, as_name=as_name)
+    doc = replace(doc, path=source.path)
+    root = Path(out_dir) if out_dir else workspace.bundle_dir(doc.path.name, level)
     record = bundle.write_bundle(doc, level=level, out_dir=root, force=force)
     index_path = root / bundle.INDEX_NAME
 
-    print(f"source: {doc.path}")
+    print(f"source: {source.origin}")
+    if source.stored:
+        print(f"stored: {source.path}")
     print(f"level: {level}")
     print(f"articles: {len(record.articles)}")
     if record.preamble is not None:
@@ -241,23 +291,29 @@ def _split_document(
     _print_levels(heading_counts(doc.fragment))
     print(f"bundle: {root}")
     print(f"index: {index_path}")
+    _refresh_index(workspace, force)
     if open_after:
+        # The bundle's own index lists the pieces; the workspace index
+        # above it lists bundles, so it is not what a split should open.
         print(presentation.open_in_browser(index_path))
     return 0
 
 
-def _assemble_bundle(args: argparse.Namespace, open_after: bool) -> int:
+def _assemble_bundle(
+    args: argparse.Namespace, open_after: bool, workspace: Workspace
+) -> int:
     """Assemble a bundle into a new docx and report what happened.
 
     Args:
         args: Parsed arguments holding ``--assemble``.
         open_after: Whether to open the written docx once it exists.
+        workspace: Whose ``output/`` directory receives the default path.
 
     Returns:
         int: ``0`` on success, ``1`` on a reported failure.
     """
     root = Path(args.assemble)
-    out_path = Path(args.out) if args.out else bundle.default_output(root)
+    out_path = Path(args.out) if args.out else workspace.output_path(root)
     try:
         result = bundle.assemble_docx(
             root, out_path, template=args.template, force=args.force
@@ -275,9 +331,27 @@ def _assemble_bundle(args: argparse.Namespace, open_after: bool) -> int:
     print(_edited_line(result.edited))
     for message in result.warnings:
         print(f"warning: {message}")
+    _refresh_index(workspace, args.force)
     if open_after:
         print(presentation.open_in_browser(result.output))
     return 0
+
+
+def _refresh_index(workspace: Workspace, force: bool) -> None:
+    """Rewrite the workspace index, reporting rather than failing.
+
+    A split or an assembly is the work; the index is derived from it.
+    Refusing the command because a page could not be refreshed would
+    report the wrong thing.
+
+    Args:
+        workspace: Whose index to refresh.
+        force: Overwrite a file this tool did not write.
+    """
+    try:
+        write_index(workspace, force=force)
+    except OSError as exc:
+        print(f"warning: workspace index not written: {exc}")
 
 
 def _edited_line(edited: tuple[int, ...]) -> str:
@@ -303,6 +377,9 @@ def main(argv: list[str] | None = None) -> int:
         trans-lc-pilot --convert FILE [--quiet]
         trans-lc-pilot --split FILE [--level N] [--out DIR] [--quiet]
         trans-lc-pilot --assemble BUNDLE_DIR [--out FILE] [--quiet]
+
+    Every artifact lands under ``--workspace DIR``, the current working
+    directory by default.
 
     Args:
         argv: Optional argument vector excluding the program name;

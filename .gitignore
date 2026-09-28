@@ -12,4 +12,7 @@ build/
 .ruff_cache/
 .tmp/
 bundles/
+sources/
+output/
+/index.html
 .vscode/settings.json

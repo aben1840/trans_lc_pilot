@@ -32,13 +32,14 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 ## 项目结构与模块组织
 
-项目采用 `src/` 布局的 Python 包。所有应用代码位于 `src/trans_lc_pilot/` 下，分为两个平行消费侧和一个共享能力内核：
+项目采用 `src/` 布局的 Python 包。所有应用代码位于 `src/trans_lc_pilot/` 下，分为一个共享能力内核、一个布局层和两个平行消费侧。依赖方向单向：**入口 → `workspace/` → `docproj/`**，`docproj/` 永不 import `workspace/`。
 
-- `docproj/` — 文档处理内核。`bundle.py` 是汇聚点：`Bundle` 模型、目录布局（manifest、模板副本、索引页、可编辑片段）、`validate`，以及两个方向的操作——`write_bundle`（把一份文档分割成 bundle）与 `assemble_docx`（把 bundle 组装回新 docx）。支撑模块：分割侧 `source_doc.py`（`SourceDoc`：加载 docx 并经 mammoth 转为 HTML 片段）、`html_headings.py`（按标题拆分）、`article.py`（`Article` 数据模型）；组装侧 `docx_styles.py`（解析模板样式，标题按大纲级别映射）、`docx_body.py`（HTML 元素 → docx 正文）。`presentation.py` 只负责 HTML 序列化与打开文件。两侧共用，**不依赖** LangChain。
-- `cli.py` — docx 专用 argparse 入口（`trans-lc-pilot` 脚本）。只处理 `--list-levels`、`--convert`、`--split` 三个分支，**无 LLM 依赖**。
+- `docproj/` — 文档处理内核，**完全路径无关**：调用方给什么路径，它就在哪里写，从不自行推导位置。`bundle.py` 是汇聚点：`Bundle` 模型、bundle 的目录布局（manifest、模板副本、索引页、可编辑片段）、`validate`，以及两个方向的操作——`write_bundle`（把一份文档分割成 bundle）与 `assemble_docx`（把 bundle 组装回新 docx）。支撑模块：分割侧 `source_doc.py`（`SourceDoc`：加载 docx 并经 mammoth 转为 HTML 片段）、`html_headings.py`（按标题拆分）、`article.py`（`Article` 数据模型）；组装侧 `docx_styles.py`（解析模板样式，标题按大纲级别映射）、`docx_body.py`（HTML 元素 → docx 正文）。`presentation.py` 只负责 HTML 序列化与打开文件。**不依赖** LangChain，也**不依赖** `workspace/`。
+- `workspace/` — 布局层，唯一知道制品落在哪里的地方。`layout.py`（`Workspace` 模型、子目录常量、默认命名）、`ingest.py`（入库与溯源）、`preview.py`（`--convert` 的预览）、`index.py`（聚合视图）。布局为 `<workspace>/` 下的 `sources/`、`bundles/`、`output/`、`.tmp/` 与根 `index.html`。
+- `cli.py` — docx 专用 argparse 入口（`trans-lc-pilot` 脚本）。处理 `--list-levels`、`--convert`、`--split`、`--assemble` 四个互斥分支，**无 LLM 依赖**。
 - `langchain_agent/` — 独立 LangChain agent 运行时（`trans-lc-pilot-agent` 脚本）。自包含：`config.py`（Settings + load_settings）、`prompt.py`（system prompt）、`tools.py`（`@tool` 注册）、`agent.py`（build_llm / build_agent / run_once）、`repl.py`（交互式 REPL）、`entry.py`（独立 CLI 入口）。
 
-两个入口平行消费 `docproj/`，互相**无反向依赖**。
+两个入口平行消费 `workspace/`，互相**无反向依赖**。
 
 顶层文件：`pyproject.toml`（Hatchling 构建、项目元数据、脚本入口点）、`uv.lock`（锁定的依赖）、`README.md`、`.env.example`、`.gitignore`。
 
@@ -47,14 +48,17 @@ AGENTS.md                       ← 本文档：开发协作指南
 一切用 `uv`；不要手工编辑 `uv.lock` 或直接调用 `pip`。
 
 - `uv sync` — 将依赖安装/锁定到本地 `.venv`。
-- `uv run trans-lc-pilot --list-levels FILE` — 报告标题级别，只读不写。
-- `uv run trans-lc-pilot --split FILE --level N [--out DIR]` — 按标题拆分成一个 bundle，无 LLM 依赖。默认落在 `<CWD>/bundles/<源文件名>-h<级别>/`；已有内容的目录需 `--force` 才覆盖。
-- `uv run trans-lc-pilot --assemble BUNDLE_DIR [--out FILE] [--template FILE]` — 把 bundle 的片段组装回新 docx，样式取自 bundle 内的模板副本。无 LLM 依赖。
+- `uv run pytest` — 运行测试。测试全封闭，mock 掉 LLM，绝不使用真实 API key 联网。
+- `uv run ruff check .` — 运行 linter。
+- `uv run trans-lc-pilot --list-levels FILE` — 报告标题级别，只读不写，不使用 workspace。
+- `uv run trans-lc-pilot --convert FILE [--workspace DIR]` — 转成 HTML 预览，写进 `<workspace>/.tmp/`。预览**不入库**。
+- `uv run trans-lc-pilot --split FILE --level N [--as NAME] [--workspace DIR] [--out DIR]` — 按标题拆分成一个 bundle，无 LLM 依赖。先把源文件入库到 `<workspace>/sources/`，bundle 默认落在 `<workspace>/bundles/<源文件名>-h<级别>/`；已有内容的目录需 `--force` 才覆盖。入库遇到同名不同内容会拒绝，用 `--as` 另存新名。
+- `uv run trans-lc-pilot --assemble BUNDLE_DIR [--workspace DIR] [--out FILE] [--template FILE]` — 把 bundle 的片段组装回新 docx，样式取自 bundle 内的模板副本，默认输出到 `<workspace>/output/`。无 LLM 依赖。
 - `uv run trans-lc-pilot-agent "prompt"` — 一次性调用 LangChain agent（需 API key）。
 - `uv run trans-lc-pilot-agent` — 启动 LangChain agent 交互式 REPL（需 API key）。
 - 只有 `trans-lc-pilot-agent` 需要环境变量：`cp .env.example .env`，填写 `OPENAI_API_KEY`。`trans-lc-pilot` 的 docx 操作不需要 `.env`。
 
-目前尚未接入测试运行器；见下方*测试指南*。
+`--workspace` 默认取 CWD，因此从仓库根调用时产物与旧行为的位置一致。
 
 ## 编码风格与命名约定
 
@@ -89,7 +93,11 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 ## 测试指南
 
-目前还没有提交测试。添加时放在 `tests/` 下，镜像 `src/trans_lc_pilot/` 的目录结构（如 `tests/langchain_agent/test_tools.py`），使用 `pytest`。测试命名 `test_<unit>_<behavior>`，并保持封闭——mock 掉 LLM，绝不要用真实 API key 联网。运行方式：`uv run pytest`。
+测试放在 `tests/` 下，镜像 `src/trans_lc_pilot/` 的目录结构（如 `tests/langchain_agent/test_tools.py`），使用 `pytest`。测试命名 `test_<unit>_<behavior>`，并保持封闭——mock 掉 LLM，绝不要用真实 API key 联网。样例文档放在 `tests/fixtures/`。
+
+运行方式：`uv run pytest`。
+
+调用写入型命令的测试**必须传 `--quiet`**（或对 agent 工具传 `open_browser=False`），否则会拉起浏览器；断言返回码而非异常，因为 `cli.main` 会吞掉一切异常并以 `1` 退出。
 
 ## 提交与 Pull Request 规范
 
@@ -99,6 +107,6 @@ AGENTS.md                       ← 本文档：开发协作指南
 ## 安全与配置提示
 
 - 绝不提交 `.env`；它已被 git 忽略。只有 `.env.example` 属于仓库。
-- bundle 内含源文档的副本（`template.docx`），因此 `bundles/` 已被 git 忽略——避免把用户的文档提交进仓库。`.tmp/` 同样被忽略。
+- workspace 内含用户的文档：`sources/`（入库的源文件）、`bundles/`（各含一份 `template.docx` 副本）、`output/`（组装产物）、`.tmp/`（预览）。这些**全部**已被 git 忽略，加上根 `index.html`（其内容含源文件的绝对路径）。
 - `trans-lc-pilot-agent` 运行时需要 `OPENAI_API_KEY` —— 缺失时 `langchain_agent/agent.py` 中的 `build_llm` 会抛出异常。`trans-lc-pilot` 的 docx 操作不需要。
 - `OPENAI_BASE_URL` 可指向兼容的本地或托管端点；留空则使用 OpenAI。
