@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 trans-lc-pilot = "trans_lc_pilot.cli:main"
 trans-lc-pilot-agent = "trans_lc_pilot.langchain_agent.entry:main"
+trans-lc-pilot-package = "trans_lc_pilot.packaging:main"
 
 [build-system]
 requires = ["hatchling"]
