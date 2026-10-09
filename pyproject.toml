@@ -26,7 +26,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/trans_lc_pilot"]
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.6",

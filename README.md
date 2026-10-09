@@ -5,28 +5,37 @@ A Workbuddy Expert Plugin: LangChain-powered document processing behind two para
 ## Setup
 
 ```bash
-uv sync
+python -m venv .venv
+.venv/Scripts/python -m pip install --upgrade pip
+.venv/Scripts/python -m pip install pip-tools
+.venv/Scripts/pip-compile pyproject.toml -o requirements.txt
+.venv/Scripts/pip-compile --extra dev pyproject.toml -o requirements-dev.txt
+.venv/Scripts/python -m pip install -r requirements-dev.txt
+.venv/Scripts/python -m pip install -e .
+
 cp .env.example .env   # then fill OPENAI_API_KEY — required by the agent entry only
 ```
+
+(`Scripts/` is `bin/` on macOS / Linux; the rest of the steps are the same.)
 
 ## Usage
 
 ```bash
 # docx → HTML (no LLM, no API key)
-uv run trans-lc-pilot inspect  FILE
-uv run trans-lc-pilot preview  FILE [--workspace DIR] [--quiet]
-uv run trans-lc-pilot split    FILE [--level N] [--as NAME] [--workspace DIR]
-                                    [--quiet] [--force]
-uv run trans-lc-pilot assemble BUNDLE_DIR [--out FILE] [--template FILE]
-                                    [--workspace DIR] [--quiet] [--force]
+.venv/Scripts/trans-lc-pilot inspect  FILE
+.venv/Scripts/trans-lc-pilot preview  FILE [--workspace DIR] [--quiet]
+.venv/Scripts/trans-lc-pilot split    FILE [--level N] [--as NAME] [--workspace DIR]
+                                          [--quiet] [--force]
+.venv/Scripts/trans-lc-pilot assemble BUNDLE_DIR [--out FILE] [--template FILE]
+                                          [--workspace DIR] [--quiet] [--force]
 
 # --workspace DIR roots every artifact (default: the current working directory).
 # inspect writes nothing, so it takes no workspace.
-uv run trans-lc-pilot split report.docx --workspace ./work
+.venv/Scripts/trans-lc-pilot split report.docx --workspace ./work
 
 # LangChain agent (requires OPENAI_API_KEY)
-uv run trans-lc-pilot-agent "split this document at level 2 headings"
-uv run trans-lc-pilot-agent            # interactive REPL
+.venv/Scripts/trans-lc-pilot-agent "split this document at level 2 headings"
+.venv/Scripts/trans-lc-pilot-agent            # interactive REPL
 ```
 
 ## The workspace

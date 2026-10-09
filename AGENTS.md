@@ -41,24 +41,40 @@ AGENTS.md                       ← 本文档：开发协作指南
 
 两个入口平行消费 `workspace/`，互相**无反向依赖**。
 
-顶层文件：`pyproject.toml`（Hatchling 构建、项目元数据、脚本入口点）、`uv.lock`（锁定的依赖）、`README.md`、`.env.example`、`.gitignore`。
+顶层文件：`pyproject.toml`（Hatchling 构建、项目元数据、脚本入口点）、`requirements.txt` / `requirements-dev.txt`（pip-compile 生成的锁文件）、`README.md`、`.env.example`、`.gitignore`。
 
 ## 构建、测试与开发命令
 
-一切用 `uv`；不要手工编辑 `uv.lock` 或直接调用 `pip`。
+一切用 Python stdlib venv + pip + pip-tools。Lockfile 由 pip-compile 从 `pyproject.toml` 生成，提交到仓库（`requirements.txt` 为运行时，`requirements-dev.txt` 为含 dev extras 的开发期）。开发侧与客户侧的依赖安装走同一条 `python -m pip` 路径。
 
-- `uv sync` — 将依赖安装/锁定到本地 `.venv`。
-- `uv run pytest` — 运行测试。测试全封闭，mock 掉 LLM，绝不使用真实 API key 联网。
-- `uv run ruff check .` — 运行 linter。
-- `uv run trans-lc-pilot inspect FILE` — 报告标题级别，只读不写，不使用 workspace。
-- `uv run trans-lc-pilot preview FILE [--workspace DIR]` — 转成 HTML 预览，写进 `<workspace>/.tmp/`。预览**不入库**。
-- `uv run trans-lc-pilot split FILE --level N [--as NAME] [--workspace DIR]` — 按标题拆分成一个 bundle，无 LLM 依赖。先把源文件入库到 `<workspace>/sources/`，bundle 落在 `<workspace>/bundles/<源文件名>-h<级别>/`；已有内容的目录需 `--force` 才覆盖。入库遇到同名不同内容会拒绝，用 `--as` 另存新名——它同时决定 bundle 目录名。注意 **`split` 没有 `--out`**：bundle 必须落在 workspace 内，因为聚合索引靠扫描 `<workspace>/bundles/` 得出，越界的 bundle 不会出现在其中；而 `assemble --out` 保留，因为组装产物是交给译者的交付物，落在哪都合理。
-- `uv run trans-lc-pilot assemble BUNDLE_DIR [--workspace DIR] [--out FILE] [--template FILE]` — 把 bundle 的片段组装回新 docx，样式取自 bundle 内的模板副本，默认输出到 `<workspace>/output/`。无 LLM 依赖。
-- `uv run trans-lc-pilot-agent "prompt"` — 一次性调用 LangChain agent（需 API key）。
-- `uv run trans-lc-pilot-agent` — 启动 LangChain agent 交互式 REPL（需 API key）。
-- 只有 `trans-lc-pilot-agent` 需要环境变量：`cp .env.example .env`，填写 `OPENAI_API_KEY`。`trans-lc-pilot` 的 docx 操作不需要 `.env`。
+一次性 bootstrap（首次或换机器后）：
+
+```
+python -m venv .venv
+.venv/Scripts/python -m pip install --upgrade pip
+.venv/Scripts/python -m pip install pip-tools
+.venv/Scripts/pip-compile pyproject.toml -o requirements.txt
+.venv/Scripts/pip-compile --extra dev pyproject.toml -o requirements-dev.txt
+.venv/Scripts/python -m pip install -r requirements-dev.txt
+.venv/Scripts/python -m pip install -e .
+```
+
+之后所有命令在 `.venv/` 内直接运行（Windows 下入口在 `Scripts/`；macOS / Linux 在 `bin/`）。下面是模块入口的等价形式：
+
+- `.venv/Scripts/python -m pytest` — 运行测试。测试全封闭，mock 掉 LLM，绝不使用真实 API key 联网。
+- `.venv/Scripts/python -m ruff check .` — 运行 linter。
+- `.venv/Scripts/trans-lc-pilot inspect FILE` — 报告标题级别，只读不写，不使用 workspace。
+- `.venv/Scripts/trans-lc-pilot preview FILE [--workspace DIR]` — 转成 HTML 预览，写进 `<workspace>/.tmp/`。预览**不入库**。
+- `.venv/Scripts/trans-lc-pilot split FILE --level N [--as NAME] [--workspace DIR]` — 按标题拆分成一个 bundle，无 LLM 依赖。先把源文件入库到 `<workspace>/sources/`，bundle 落在 `<workspace>/bundles/<源文件名>-h<级别>/`；已有内容的目录需 `--force` 才覆盖。入库遇到同名不同内容会拒绝，用 `--as` 另存新名——它同时决定 bundle 目录名。注意 **`split` 没有 `--out`**：bundle 必须落在 workspace 内，因为聚合索引靠扫描 `<workspace>/bundles/` 得出，越界的 bundle 不会出现在其中；而 `assemble --out` 保留，因为组装产物是交给译者的交付物，落在哪都合理。
+- `.venv/Scripts/trans-lc-pilot assemble BUNDLE_DIR [--workspace DIR] [--out FILE] [--template FILE]` — 把 bundle 的片段组装回新 docx，样式取自 bundle 内的模板副本，默认输出到 `<workspace>/output/`。无 LLM 依赖。
+- `.venv/Scripts/trans-lc-pilot-agent "prompt"` — 一次性调用 LangChain agent（需 API key）。
+- `.venv/Scripts/trans-lc-pilot-agent` — 启动 LangChain agent 交互式 REPL（需 API key）。
+
+只有 `trans-lc-pilot-agent` 需要环境变量：`cp .env.example .env`，填写 `OPENAI_API_KEY`。`trans-lc-pilot` 的 docx 操作不需要 `.env`。
 
 `--workspace` 默认取 CWD，因此从仓库根调用时产物与旧行为的位置一致。
+
+新增依赖：编辑 `pyproject.toml` 后，重跑两次 `pip-compile`（runtime / dev），把生成的 `requirements*.txt` 一起提交。代码中按惯例仍然不直接 import 新依赖之外的模块。
 
 ## 编码风格与命名约定
 
@@ -88,14 +104,14 @@ AGENTS.md                       ← 本文档：开发协作指南
     ```
 
 - 已配置 `ruff` 作为 linter（见 `pyproject.toml` 中的 `[tool.ruff]`）。
-  运行 `uv run ruff check .` 检查，`uv run ruff check --fix .` 应用安全的自动修复。公开函数、类和模块必须带 Google 风格 docstring（pydocstyle `D` 规则，`convention = "google"`）。
+  运行 `.venv/Scripts/python -m ruff check .` 检查，`.venv/Scripts/python -m ruff check --fix .` 应用安全的自动修复。公开函数、类和模块必须带 Google 风格 docstring（pydocstyle `D` 规则，`convention = "google"`）。
   尚未配置 formatter —— 保持 4 空格缩进、双引号字符串、多行字面量末尾加逗号。
 
 ## 测试指南
 
 测试放在 `tests/` 下，镜像 `src/trans_lc_pilot/` 的目录结构（如 `tests/langchain_agent/test_tools.py`），使用 `pytest`。测试命名 `test_<unit>_<behavior>`，并保持封闭——mock 掉 LLM，绝不要用真实 API key 联网。样例文档放在 `tests/fixtures/`。
 
-运行方式：`uv run pytest`。
+运行方式：`.venv/Scripts/python -m pytest`。
 
 调用写入型命令的测试**必须传 `--quiet`**（或对 agent 工具传 `open_browser=False`），否则会拉起浏览器；断言返回码而非异常，因为 `cli.main` 会吞掉一切异常并以 `1` 退出。
 

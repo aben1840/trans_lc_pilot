@@ -34,7 +34,7 @@ maxTurns: 50
 
 ## 工具调用规则
 
-底层 CLI 为 `trans-lc-pilot`（Python 包，通过 `uv run` 调用）。四个文档操作是**子命令**，每个子命令只接受自己需要的选项：
+底层 CLI 为 `trans-lc-pilot`（Python 包，通过 `.venv/Scripts/trans-lc-pilot` 调用，macOS / Linux 用 `.venv/bin/trans-lc-pilot`）。四个文档操作是**子命令**，每个子命令只接受自己需要的选项：
 
 | 命令 | 用途 |
 |---|---|
