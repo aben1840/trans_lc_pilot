@@ -76,6 +76,12 @@ python -m venv .venv
 
 新增依赖：编辑 `pyproject.toml` 后，重跑两次 `pip-compile`（runtime / dev），把生成的 `requirements*.txt` 一起提交。代码中按惯例仍然不直接 import 新依赖之外的模块。
 
+## 打包分发
+
+`.venv/Scripts/trans-lc-pilot-package [--out FILE]` 内部跑一次 `pip wheel .`，把生成的 `trans_lc_pilot-<version>-py3-none-any.whl` 落在 `dist/` 下，再与 `requirements.txt`、`setup.cmd` 一起打进 zip。客户机拿到 zip 后双击 `setup.cmd`，**不再走 build 路径**——pip 只解 wheel，不调 hatchling。
+
+改了 `src/trans_lc_pilot/` 或 `pyproject.toml` 之后，重跑一次 `trans-lc-pilot-package` 即可；`pip wheel` 会用最新源码重新生成 wheel。`dist/` 在 `.gitignore` 内，不会污染仓库。
+
 ## 编码风格与命名约定
 
 - Python ≥ 3.12。每个模块以 `from __future__ import annotations` 开头。
