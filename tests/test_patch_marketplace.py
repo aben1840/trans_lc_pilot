@@ -1,6 +1,6 @@
 """Tests for the standalone ``tools/patch_marketplace.py`` script.
 
-The script is bundled into ``dist/plugin.zip`` at ``tools/`` and
+The script is bundled into ``dist/trans-lc-pilot.zip`` at ``tools/`` and
 invoked by ``setup.cmd`` to upsert the host's my-experts
 ``marketplace.json``. It must use only the standard library because
 it runs before the project wheel is installed.

@@ -274,8 +274,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--out",
         metavar="FILE",
-        default="plugin.zip",
-        help="Path of the zip to write (default: ./plugin.zip).",
+        default="trans-lc-pilot.zip",
+        help="Path of the zip to write (default: ./trans-lc-pilot.zip).",
     )
     return parser.parse_args(argv)
 

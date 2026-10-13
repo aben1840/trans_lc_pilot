@@ -109,7 +109,7 @@ def test_write_plugin_bundles_four_layers(tmp_path: Path) -> None:
         patch.object(packaging, "_build_wheel", return_value=fake_wheel),
         patch.object(packaging, "_read_pyproject_version", return_value="9.9.9"),
     ):
-        out = tmp_path / "plugin.zip"
+        out = tmp_path / "trans-lc-pilot.zip"
         rc = packaging.main(["--out", str(out)])
 
     assert rc == 0
@@ -158,7 +158,7 @@ def test_setup_cmd_targets_workbuddy_python(tmp_path: Path) -> None:
         patch.object(packaging, "_build_wheel", return_value=fake_wheel),
         patch.object(packaging, "_read_pyproject_version", return_value="9.9.9"),
     ):
-        out = tmp_path / "plugin.zip"
+        out = tmp_path / "trans-lc-pilot.zip"
         packaging.main(["--out", str(out)])
 
     with zipfile.ZipFile(out) as zf:
@@ -196,7 +196,7 @@ def test_setup_cmd_critical_commands_are_single_lines(tmp_path: Path) -> None:
         patch.object(packaging, "_build_wheel", return_value=fake_wheel),
         patch.object(packaging, "_read_pyproject_version", return_value="9.9.9"),
     ):
-        out = tmp_path / "plugin.zip"
+        out = tmp_path / "trans-lc-pilot.zip"
         packaging.main(["--out", str(out)])
 
     with zipfile.ZipFile(out) as zf:
@@ -254,7 +254,7 @@ def test_main_returns_one_when_build_fails(
         ),
         patch.object(packaging, "_read_pyproject_version", return_value="0.1.0"),
     ):
-        rc = packaging.main(["--out", str(tmp_path / "plugin.zip")])
+        rc = packaging.main(["--out", str(tmp_path / "trans-lc-pilot.zip")])
 
     assert rc == 1
     err = capsys.readouterr().err
@@ -270,7 +270,7 @@ def test_main_returns_one_when_version_missing(
         "_read_pyproject_version",
         side_effect=RuntimeError("pyproject.toml has no [project] version"),
     ):
-        rc = packaging.main(["--out", str(tmp_path / "plugin.zip")])
+        rc = packaging.main(["--out", str(tmp_path / "trans-lc-pilot.zip")])
 
     assert rc == 1
     err = capsys.readouterr().err
@@ -278,9 +278,9 @@ def test_main_returns_one_when_version_missing(
 
 
 def test_parse_args_default_out() -> None:
-    """``--out`` defaults to ``plugin.zip`` in the current directory."""
+    """``--out`` defaults to ``trans-lc-pilot.zip`` in the current directory."""
     ns = packaging.parse_args([])
-    assert ns.out == "plugin.zip"
+    assert ns.out == "trans-lc-pilot.zip"
 
 
 def test_parse_args_explicit_out(tmp_path: Path) -> None:
