@@ -24,22 +24,31 @@ a stock Python 3.12+::
                           customer side never builds — it only
                           unpacks.
 
-In addition to the installer artifacts, the archive carries a
-Workbuddy Expert Plugin subtree under ``plugin/`` so the same zip
-can be merged into a marketplace directory verbatim::
+In addition to the installer artifacts, the archive carries:
 
-    plugin/.codebuddy-plugin/marketplace.json
-                          Generated marketplace manifest whose
-                          ``plugins[].source`` points at the bundled
-                          plugin under ``plugin/plugins/<name>/<ver>/``.
-    plugin/plugins/<name>/<ver>/
-                          The plugin's surface copied from
-                          ``.codebuddy-plugin/plugin.json``,
-                          ``agents/``, ``skills/`` and ``avatars/``
-                          in this repository. The agent persona and
-                          skills are not imported by the wheel — they
-                          are loaded by Workbuddy directly from this
-                          subtree.
+* A Workbuddy Expert Plugin subtree under ``plugin/`` so the same
+  zip can be merged into a marketplace directory verbatim::
+
+      plugin/.codebuddy-plugin/marketplace.json
+                                Generated marketplace manifest whose
+                                ``plugins[].source`` points at the
+                                bundled plugin under
+                                ``plugin/plugins/<name>/<ver>/``.
+      plugin/plugins/<name>/<ver>/
+                                The plugin's surface copied from
+                                ``.codebuddy-plugin/plugin.json``,
+                                ``agents/``, ``skills/`` and
+                                ``avatars/`` in this repository. The
+                                agent persona and skills are not
+                                imported by the wheel — they are loaded
+                                by Workbuddy directly from this
+                                subtree.
+
+* A ``tools/`` subtree at the archive root containing standalone
+  helper scripts that ``setup.cmd`` invokes during install (for
+  example, to patch the host marketplace manifest). These scripts
+  are bundled verbatim from the repository's ``tools/`` directory
+  and are not part of the wheel.
 
 This entry point does **not** handle document-only operations
 (``inspect``, ``preview``, ``split``, ``assemble``). Those live on
@@ -83,6 +92,14 @@ _PLUGIN_TOP_DIRNAMES: tuple[str, ...] = (
     PLUGIN_AVATARS_DIRNAME,
 )
 
+TOOLS_DIRNAME = "tools"
+"""Directory of standalone helper scripts that ship alongside the
+installer artifacts at the archive root. ``setup.cmd`` invokes these
+scripts as part of the install flow (for example, to patch the host
+marketplace manifest). Unlike the plugin surface, files here are
+unversioned and are placed at the archive root under ``tools/``,
+not under the per-version plugin subdirectory."""
+
 _SKIP_DIR_PREFIXES: tuple[str, ...] = ("__pycache__", ".")
 _SKIP_BASENAMES: frozenset[str] = frozenset({".DS_Store"})
 
@@ -91,51 +108,134 @@ _VERSION_PATTERN = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 
 _SETUP_CMD_BODY_TEMPLATE = (
     "@echo off\r\n"
-    "setlocal\r\n"
+    "setlocal EnableDelayedExpansion\r\n"
     "chcp 65001 >nul\r\n"
     "cd /d \"%~dp0\"\r\n"
     "\r\n"
-    "echo === trans-lc-pilot setup ===\r\n"
+    "rem === Configuration ===\r\n"
+    "rem WORKBUDDY_HOME defaults to %USERPROFILE%\\.workbuddy.\r\n"
+    "rem Override by setting the env var before running setup.cmd.\r\n"
+    "if \"%WORKBUDDY_HOME%\"==\"\" set \"WORKBUDDY_HOME=%USERPROFILE%\\.workbuddy\"\r\n"
     "\r\n"
-    "where python >nul 2>&1\r\n"
-    "if errorlevel 1 (\r\n"
-    "    echo error: Python not found on PATH. Install Python 3.12+ and retry.\r\n"
+    "set \"WB_PY=%WORKBUDDY_HOME%\\binaries\\python"
+    "\\versions\\3.13.12\\python.exe\"\r\n"
+    "set \"WB_MARKETPLACE=%WORKBUDDY_HOME%\\plugins\\marketplaces\\my-experts\"\r\n"
+    "set \"WB_PLUGIN_DIR=%WB_MARKETPLACE%\\plugins\\trans-lc-pilot\"\r\n"
+    "\r\n"
+    "set \"FORCE=\"\r\n"
+    "if /I \"%~1\"==\"--force\" set \"FORCE=1\"\r\n"
+    "\r\n"
+    "echo === trans-lc-pilot setup ===\r\n"
+    "echo workbuddy home: %WORKBUDDY_HOME%\r\n"
+    "echo python:         %WB_PY%\r\n"
+    "echo marketplace:    %WB_MARKETPLACE%\r\n"
+    "echo.\r\n"
+    "\r\n"
+    "rem === Step 1: Verify Workbuddy Python ===\r\n"
+    "if not exist \"%WB_PY%\" (\r\n"
+    "    echo error: Workbuddy Python not found at \"%WB_PY%\".\r\n"
+    "    echo   Install Workbuddy, or set WORKBUDDY_HOME to a directory\r\n"
+    "    echo   that contains\r\n"
+    "    echo   \"binaries\\python\\versions\\3.13.12\\python.exe\".\r\n"
     "    exit /b 1\r\n"
     ")\r\n"
     "\r\n"
-    "for /f \"delims=\" %%v in ('python --version 2^>^&1') do set PYVER=%%v\r\n"
-    "echo using %PYVER%\r\n"
+    "rem === Step 2: Verify marketplace ===\r\n"
+    "if not exist \"%WB_MARKETPLACE%\" (\r\n"
+    "    echo error: marketplace not found at \"%WB_MARKETPLACE%\".\r\n"
+    "    echo   Create the directory or set WORKBUDDY_HOME.\r\n"
+    "    exit /b 1\r\n"
+    ")\r\n"
     "\r\n"
-    "python -m pip install --upgrade pip\r\n"
+    "rem === Step 3: Install runtime deps and wheel into Workbuddy Python ===\r\n"
+    "\"%WB_PY%\" -m pip install --upgrade pip\r\n"
     "if errorlevel 1 exit /b 1\r\n"
     "\r\n"
-    "python -m pip install --only-binary=:all: -r requirements.txt\r\n"
+    "\"%WB_PY%\" -m pip install --only-binary=:all: -r requirements.txt\r\n"
     "if errorlevel 1 (\r\n"
     "    echo error: dependency install failed. Check network / PyPI access.\r\n"
     "    exit /b 1\r\n"
     ")\r\n"
     "\r\n"
-    "python -m pip install --no-deps <WHEEL_FILENAME>\r\n"
+    "\"%WB_PY%\" -m pip install --no-deps <WHEEL_FILENAME>\r\n"
     "if errorlevel 1 exit /b 1\r\n"
     "\r\n"
-    "python -c \"import trans_lc_pilot\" || (\r\n"
+    "\"%WB_PY%\" -c \"import trans_lc_pilot\" || (\r\n"
     "    echo error: trans_lc_pilot import failed after install\r\n"
     "    exit /b 1\r\n"
     ")\r\n"
     "\r\n"
+    "rem === Step 4: Copy plugin surface into my-experts marketplace ===\r\n"
+    "if exist \"%WB_PLUGIN_DIR%\" (\r\n"
+    "    if \"!FORCE!\"==\"1\" (\r\n"
+    "        echo Removing existing plugin at \"%WB_PLUGIN_DIR%\".\r\n"
+    "        rmdir /S /Q \"%WB_PLUGIN_DIR%\"\r\n"
+    "    ) else (\r\n"
+    "        echo error: plugin already installed at \"%WB_PLUGIN_DIR%\".\r\n"
+    "        echo   Re-run with --force to overwrite.\r\n"
+    "        exit /b 1\r\n"
+    "    )\r\n"
+    ")\r\n"
+    "\r\n"
+    "set \"SRC_PLUGIN_ROOT=%~dp0plugin\\plugins\\trans-lc-pilot\"\r\n"
+    "if not exist \"%SRC_PLUGIN_ROOT%\" (\r\n"
+    "    echo error: plugin source not found in zip at \"%SRC_PLUGIN_ROOT%\".\r\n"
+    "    exit /b 1\r\n"
+    ")\r\n"
+    "\r\n"
+    "rem Pick the (only) version subdirectory under the plugin root.\r\n"
+    "set \"SRC_VER_DIR=\"\r\n"
+    "for /D %%d in (\"%SRC_PLUGIN_ROOT%\\*\") do (\r\n"
+    "    set \"SRC_VER_DIR=%%d\"\r\n"
+    "    goto copy_start\r\n"
+    ")\r\n"
+    ":copy_start\r\n"
+    "if \"%SRC_VER_DIR%\"==\"\" (\r\n"
+    "    echo error: no version subdirectory under \"%SRC_PLUGIN_ROOT%\".\r\n"
+    "    exit /b 1\r\n"
+    ")\r\n"
+    "\r\n"
+    "xcopy /E /I /Y \"%SRC_VER_DIR%\" \"%WB_PLUGIN_DIR%\\\" >nul\r\n"
+    "if errorlevel 1 (\r\n"
+    "    echo error: failed to copy plugin to \"%WB_PLUGIN_DIR%\".\r\n"
+    "    exit /b 1\r\n"
+    ")\r\n"
+    "\r\n"
+    "rem === Step 5: Patch my-experts marketplace.json (idempotent) ===\r\n"
+    "set \"WB_MKT_JSON=%WB_MARKETPLACE%\\.codebuddy-plugin\\marketplace.json\"\r\n"
+    "if not exist \"%WB_MKT_JSON%\" (\r\n"
+    "    echo warning: \"%WB_MKT_JSON%\" does not exist;\r\n"
+    "    echo          skipping marketplace.json patch.\r\n"
+    "    echo   You may need to add the trans-lc-pilot entry manually.\r\n"
+    "    goto finish\r\n"
+    ")\r\n"
+    "\r\n"
+    "\"%WB_PY%\" \"%~dp0tools\\patch_marketplace.py\" \""
+    "%WB_MKT_JSON%\" trans-lc-pilot ./plugins/trans-lc-pilot\r\n"
+    "if errorlevel 1 (\r\n"
+    "    echo error: failed to patch marketplace.json.\r\n"
+    "    exit /b 1\r\n"
+    ")\r\n"
+    "\r\n"
+    ":finish\r\n"
     "echo.\r\n"
     "echo Setup complete.\r\n"
-    "echo   trans-lc-pilot inspect FILE\r\n"
-    "echo   trans-lc-pilot split FILE --level N\r\n"
-    "echo   trans-lc-pilot assemble BUNDLE_DIR\r\n"
-    "echo   trans-lc-pilot-agent \"prompt\"\r\n"
+    "echo   trans-lc-pilot installed at: %WB_PLUGIN_DIR%\r\n"
+    "echo   trans-lc-pilot CLI runs on the Workbuddy Python at %WB_PY%\r\n"
+    "echo.\r\n"
+    "echo Restart Workbuddy to pick up the new plugin. If it does not\r\n"
+    "echo appear in the expert list, consult Workbuddy's plugin registration\r\n"
+    "echo flow (some hosts require an explicit step beyond marketplace.json).\r\n"
     "endlocal\r\n"
     "exit /b 0\r\n"
 )
 """Windows installer payload; ``\\r\\n`` line endings keep the file
-Windows-native, which a ``.cmd`` should be. ``<WHEEL_FILENAME>`` is
-substituted with the actual wheel filename at packaging time so the
-installer tracks version bumps in :file:`pyproject.toml`."""
+Windows-native, which a ``.cmd`` should be. Placeholders substituted
+at packaging time:
+
+- ``<WHEEL_FILENAME>`` → the wheel filename produced by ``pip wheel``,
+  so the install command tracks the version in :file:`pyproject.toml`.
+"""
 
 _MARKETPLACE_JSON_TEMPLATE = """\
 {
@@ -280,19 +380,49 @@ def _build_wheel() -> Path:
         return target
 
 
+def _iter_tools_files() -> Iterator[tuple[Path, str]]:
+    """Yield every file under :data:`TOOLS_DIRNAME` for top-level bundling.
+
+    Unlike the plugin surface (which is placed under a per-version
+    subdirectory of ``plugin/``), tools are unversioned and are written
+    at the archive root under ``tools/`` so ``setup.cmd`` can invoke
+    them by a stable path.
+
+    Yields:
+        tuple[Path, str]: ``(absolute source path, archive-relative
+        path)`` using forward slashes.
+    """
+    tools_root = PROJECT_ROOT / TOOLS_DIRNAME
+    if not tools_root.is_dir():
+        return
+    for path in tools_root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel_parts = path.relative_to(PROJECT_ROOT).parts
+        if any(part.startswith(_SKIP_DIR_PREFIXES) for part in rel_parts):
+            continue
+        if path.name in _SKIP_BASENAMES:
+            continue
+        rel = path.relative_to(PROJECT_ROOT).as_posix()
+        yield path, rel
+
+
 def _write_plugin(out_path: Path, version: str) -> None:
     """Write the plugin archive at ``out_path``.
 
-    The archive is laid out in three layers:
+    The archive is laid out in four layers:
 
     1. **Installer artifacts** at the archive root (``setup.cmd``,
        ``requirements.txt``, the wheel) so a customer can unpack the
        zip and double-click ``setup.cmd`` to install the CLI.
-    2. **Generated marketplace manifest** at
+    2. **Tools** at the archive root under ``tools/`` — standalone
+       helper scripts that ``setup.cmd`` invokes during install (for
+       example, to patch the host marketplace manifest).
+    3. **Generated marketplace manifest** at
        ``plugin/.codebuddy-plugin/marketplace.json``, whose single
        entry points at the bundled plugin under
        ``plugin/plugins/<name>/<version>/``.
-    3. **Plugin surface** at ``plugin/plugins/<name>/<version>/``,
+    4. **Plugin surface** at ``plugin/plugins/<name>/<version>/``,
        mirroring the repository's ``.codebuddy-plugin/plugin.json``,
        ``agents/``, ``skills/`` and ``avatars/`` so Workbuddy can load
        the expert directly from the archive.
@@ -317,18 +447,22 @@ def _write_plugin(out_path: Path, version: str) -> None:
     )
 
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Layer 1 — installer artifacts (existing behaviour).
+        # Layer 1 — installer artifacts.
         zf.writestr("setup.cmd", setup_cmd)
         zf.writestr("requirements.txt", REQUIREMENTS_TXT.read_bytes())
         zf.write(wheel, wheel.name)
 
-        # Layer 2 — generated marketplace manifest.
+        # Layer 2 — tools (unversioned, archive-root).
+        for src, rel in _iter_tools_files():
+            zf.write(src, rel)
+
+        # Layer 3 — generated marketplace manifest.
         zf.writestr(
             "plugin/.codebuddy-plugin/marketplace.json",
             marketplace_json,
         )
 
-        # Layer 3 — plugin surface (manifest + agents + skills + avatars).
+        # Layer 4 — plugin surface (manifest + agents + skills + avatars).
         for src, rel in _iter_plugin_files():
             zf.write(src, f"{plugin_root_in_zip}/{rel}")
 

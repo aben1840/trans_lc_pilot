@@ -100,8 +100,8 @@ def test_iter_plugin_files_skips_missing_subtrees(
     assert rels == [".codebuddy-plugin/plugin.json", "agents/a.md"]
 
 
-def test_write_plugin_bundles_three_layers(tmp_path: Path) -> None:
-    """main() produces an archive with installer + manifest + plugin surface."""
+def test_write_plugin_bundles_four_layers(tmp_path: Path) -> None:
+    """main() produces an archive with installer + tools + manifest + plugin surface."""
     fake_wheel = tmp_path / "trans_lc_pilot-9.9.9-py3-none-any.whl"
     fake_wheel.write_bytes(b"PK\x03\x04 fake wheel bytes")
 
@@ -128,7 +128,10 @@ def test_write_plugin_bundles_three_layers(tmp_path: Path) -> None:
         assert "trans_lc_pilot-9.9.9-py3-none-any.whl" in setup_body
         assert "0.1.0" not in setup_body  # old hardcoded version gone
 
-        # Layer 2 — generated marketplace manifest.
+        # Layer 2 — tools, unversioned at the archive root.
+        assert "tools/patch_marketplace.py" in names
+
+        # Layer 3 — generated marketplace manifest.
         manifest = json.loads(
             zf.read("plugin/.codebuddy-plugin/marketplace.json")
         )
@@ -139,12 +142,104 @@ def test_write_plugin_bundles_three_layers(tmp_path: Path) -> None:
         )
         assert manifest["name"] == "trans-lc-pilot-market"
 
-        # Layer 3 — plugin surface, versioned root.
+        # Layer 4 — plugin surface, versioned root.
         plugin_root = "plugin/plugins/trans-lc-pilot/9.9.9"
         assert f"{plugin_root}/.codebuddy-plugin/plugin.json" in names
         assert any(n.startswith(f"{plugin_root}/agents/") for n in names)
         assert any(n.startswith(f"{plugin_root}/skills/") for n in names)
         assert any(n.startswith(f"{plugin_root}/avatars/") for n in names)
+
+
+def test_setup_cmd_targets_workbuddy_python(tmp_path: Path) -> None:
+    """setup.cmd points at the Workbuddy-bundled Python and marketplace paths."""
+    fake_wheel = tmp_path / "trans_lc_pilot-9.9.9-py3-none-any.whl"
+    fake_wheel.write_bytes(b"PK\x03\x04")
+    with (
+        patch.object(packaging, "_build_wheel", return_value=fake_wheel),
+        patch.object(packaging, "_read_pyproject_version", return_value="9.9.9"),
+    ):
+        out = tmp_path / "plugin.zip"
+        packaging.main(["--out", str(out)])
+
+    with zipfile.ZipFile(out) as zf:
+        body = zf.read("setup.cmd").decode("utf-8")
+
+    # Configuration — env var with default fallback.
+    assert "WORKBUDDY_HOME" in body
+    assert "%USERPROFILE%\\.workbuddy" in body
+
+    # Hardcoded interpreter path.
+    assert "binaries\\python\\versions\\3.13.12\\python.exe" in body
+
+    # Marketplace location.
+    assert "plugins\\marketplaces\\my-experts" in body
+    assert "plugins\\trans-lc-pilot" in body
+
+    # Reinstall opt-in.
+    assert "--force" in body
+
+    # Wires up the patch helper.
+    assert "patch_marketplace.py" in body
+
+
+def test_setup_cmd_critical_commands_are_single_lines(tmp_path: Path) -> None:
+    """``set WB_PY=...`` and the patch_marketplace.py call must not be split.
+
+    The Python source uses adjacent string-literal concatenation to
+    stay under the 88-char ruff limit; if a stray ``\\r\\n`` slips
+    between the halves, batch treats them as two statements and the
+    install fails silently (the second half is a parse error).
+    """
+    fake_wheel = tmp_path / "trans_lc_pilot-9.9.9-py3-none-any.whl"
+    fake_wheel.write_bytes(b"PK\x03\x04")
+    with (
+        patch.object(packaging, "_build_wheel", return_value=fake_wheel),
+        patch.object(packaging, "_read_pyproject_version", return_value="9.9.9"),
+    ):
+        out = tmp_path / "plugin.zip"
+        packaging.main(["--out", str(out)])
+
+    with zipfile.ZipFile(out) as zf:
+        body = zf.read("setup.cmd").decode("utf-8")
+    lines = body.replace("\r\n", "\n").splitlines()
+
+    py_set_lines = [line for line in lines if 'set "WB_PY=' in line]
+    assert len(py_set_lines) == 1, py_set_lines
+    assert py_set_lines[0].rstrip().endswith('python.exe"'), py_set_lines[0]
+
+    patch_lines = [line for line in lines if "patch_marketplace.py" in line]
+    assert len(patch_lines) == 1, patch_lines
+    assert patch_lines[0].rstrip().endswith("./plugins/trans-lc-pilot"), patch_lines[0]
+
+
+def test_iter_tools_files_includes_real_helper(tmp_path: Path) -> None:
+    """``_iter_tools_files`` finds ``tools/patch_marketplace.py``."""
+    rels = [rel for _, rel in packaging._iter_tools_files()]
+    assert "tools/patch_marketplace.py" in rels
+
+
+def test_iter_tools_files_missing_dir_is_noop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When ``tools/`` does not exist, no entries are yielded."""
+    monkeypatch.setattr(packaging, "PROJECT_ROOT", tmp_path)
+    assert list(packaging._iter_tools_files()) == []
+
+
+def test_iter_tools_files_skips_pycache_and_hidden(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``__pycache__`` and ``.DS_Store`` are filtered, just like the plugin surface."""
+    monkeypatch.setattr(packaging, "PROJECT_ROOT", tmp_path)
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "patch_marketplace.py").write_text("ok", encoding="utf-8")
+    (tools / "__pycache__").mkdir()
+    (tools / "__pycache__" / "x.cpython-314.pyc").write_bytes(b"x")
+    (tools / ".DS_Store").write_text("ds", encoding="utf-8")
+
+    rels = [rel for _, rel in packaging._iter_tools_files()]
+    assert rels == ["tools/patch_marketplace.py"]
 
 
 def test_main_returns_one_when_build_fails(
