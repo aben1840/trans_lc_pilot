@@ -24,6 +24,23 @@ a stock Python 3.12+::
                           customer side never builds — it only
                           unpacks.
 
+In addition to the installer artifacts, the archive carries a
+Workbuddy Expert Plugin subtree under ``plugin/`` so the same zip
+can be merged into a marketplace directory verbatim::
+
+    plugin/.codebuddy-plugin/marketplace.json
+                          Generated marketplace manifest whose
+                          ``plugins[].source`` points at the bundled
+                          plugin under ``plugin/plugins/<name>/<ver>/``.
+    plugin/plugins/<name>/<ver>/
+                          The plugin's surface copied from
+                          ``.codebuddy-plugin/plugin.json``,
+                          ``agents/``, ``skills/`` and ``avatars/``
+                          in this repository. The agent persona and
+                          skills are not imported by the wheel — they
+                          are loaded by Workbuddy directly from this
+                          subtree.
+
 This entry point does **not** handle document-only operations
 (``inspect``, ``preview``, ``split``, ``assemble``). Those live on
 ``trans-lc-pilot`` (see :mod:`trans_lc_pilot.cli`).
@@ -31,11 +48,13 @@ This entry point does **not** handle document-only operations
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -43,7 +62,34 @@ REQUIREMENTS_TXT = PROJECT_ROOT / "requirements.txt"
 DIST_DIR = PROJECT_ROOT / "dist"
 """Where ``pip wheel`` writes its output; git-ignored."""
 
-_SETUP_CMD_BODY = (
+PLUGIN_NAME = "trans-lc-pilot"
+"""Plugin directory name inside the archive; matches ``pyproject.toml``
+``[project].name`` and ``.codebuddy-plugin/plugin.json`` ``name``."""
+
+PLUGIN_MANIFEST_RELPATH = Path(".codebuddy-plugin", "plugin.json")
+"""Source for the Workbuddy Expert plugin manifest, relative to
+:data:`PROJECT_ROOT`. Copied verbatim into the archive under the
+plugin's versioned subdirectory."""
+
+PLUGIN_AGENTS_DIRNAME = "agents"
+PLUGIN_SKILLS_DIRNAME = "skills"
+PLUGIN_AVATARS_DIRNAME = "avatars"
+"""Top-level subtrees whose contents constitute the plugin's surface.
+Only files under these roots are bundled into the plugin subtree."""
+
+_PLUGIN_TOP_DIRNAMES: tuple[str, ...] = (
+    PLUGIN_AGENTS_DIRNAME,
+    PLUGIN_SKILLS_DIRNAME,
+    PLUGIN_AVATARS_DIRNAME,
+)
+
+_SKIP_DIR_PREFIXES: tuple[str, ...] = ("__pycache__", ".")
+_SKIP_BASENAMES: frozenset[str] = frozenset({".DS_Store"})
+
+_VERSION_PATTERN = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+"""Match the ``version = "x.y.z"`` line inside ``pyproject.toml``."""
+
+_SETUP_CMD_BODY_TEMPLATE = (
     "@echo off\r\n"
     "setlocal\r\n"
     "chcp 65001 >nul\r\n"
@@ -69,7 +115,7 @@ _SETUP_CMD_BODY = (
     "    exit /b 1\r\n"
     ")\r\n"
     "\r\n"
-    "python -m pip install --no-deps trans_lc_pilot-0.1.0-py3-none-any.whl\r\n"
+    "python -m pip install --no-deps <WHEEL_FILENAME>\r\n"
     "if errorlevel 1 exit /b 1\r\n"
     "\r\n"
     "python -c \"import trans_lc_pilot\" || (\r\n"
@@ -87,7 +133,31 @@ _SETUP_CMD_BODY = (
     "exit /b 0\r\n"
 )
 """Windows installer payload; ``\\r\\n`` line endings keep the file
-Windows-native, which a ``.cmd`` should be."""
+Windows-native, which a ``.cmd`` should be. ``<WHEEL_FILENAME>`` is
+substituted with the actual wheel filename at packaging time so the
+installer tracks version bumps in :file:`pyproject.toml`."""
+
+_MARKETPLACE_JSON_TEMPLATE = """\
+{
+  "name": "trans-lc-pilot-market",
+  "description": "Local marketplace for the trans-lc-pilot plugin",
+  "owner": {
+    "name": "trans-lc-pilot maintainer",
+    "email": ""
+  },
+  "plugins": [
+    {
+      "name": "trans-lc-pilot",
+      "description": "LangChain-powered translation expert for docx",
+      "version": "<VERSION>",
+      "source": "./plugins/trans-lc-pilot/<VERSION>"
+    }
+  ]
+}
+"""
+"""Generated marketplace manifest for the bundled plugin. The
+``<VERSION>`` placeholder is replaced with the value read from
+:file:`pyproject.toml` at packaging time."""
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -108,6 +178,66 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Path of the zip to write (default: ./plugin.zip).",
     )
     return parser.parse_args(argv)
+
+
+def _read_pyproject_version() -> str:
+    """Read the ``[project] version`` field from ``pyproject.toml``.
+
+    The version is the source of truth for both the wheel filename
+    (pip already injects it) and the bundled plugin's archive path,
+    so a single read covers both call sites.
+
+    Returns:
+        str: The version string exactly as written in pyproject.toml
+        (e.g. ``"0.1.0"``).
+
+    Raises:
+        RuntimeError: If ``pyproject.toml`` cannot be read or does
+            not contain a ``version`` line in the expected shape.
+    """
+    try:
+        text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"cannot read pyproject.toml: {exc}") from exc
+    match = _VERSION_PATTERN.search(text)
+    if match is None:
+        raise RuntimeError(
+            "pyproject.toml has no [project] version = \"...\" line"
+        )
+    return match.group(1)
+
+
+def _iter_plugin_files() -> Iterator[tuple[Path, str]]:
+    """Yield every file that belongs to the plugin's surface.
+
+    The manifest is yielded as a single entry so it can be addressed
+    explicitly even though its directory starts with a leading dot.
+    The three content subtrees (``agents``, ``skills``, ``avatars``)
+    are walked recursively; the Workbuddy runtime loads files under
+    these roots directly, so we mirror them as-is.
+
+    Yields:
+        tuple[Path, str]: ``(absolute source path, archive-relative
+        path)``. The relative path always uses ``/`` as the separator
+        (suitable for :mod:`zipfile`), and is relative to
+        :data:`PROJECT_ROOT`.
+    """
+    manifest_src = PROJECT_ROOT / PLUGIN_MANIFEST_RELPATH
+    yield manifest_src, PLUGIN_MANIFEST_RELPATH.as_posix()
+    for dirname in _PLUGIN_TOP_DIRNAMES:
+        top = PROJECT_ROOT / dirname
+        if not top.is_dir():
+            continue
+        for path in top.rglob("*"):
+            if not path.is_file():
+                continue
+            rel_parts = path.relative_to(PROJECT_ROOT).parts
+            if any(part.startswith(_SKIP_DIR_PREFIXES) for part in rel_parts):
+                continue
+            if path.name in _SKIP_BASENAMES:
+                continue
+            rel = path.relative_to(PROJECT_ROOT).as_posix()
+            yield path, rel
 
 
 def _build_wheel() -> Path:
@@ -150,26 +280,57 @@ def _build_wheel() -> Path:
         return target
 
 
-def _write_plugin(out_path: Path) -> None:
+def _write_plugin(out_path: Path, version: str) -> None:
     """Write the plugin archive at ``out_path``.
 
-    First builds a wheel via :func:`_build_wheel`, then zips it with
-    the installer script and the locked ``requirements.txt``. No
-    source tree, no ``pyproject.toml``, no build artifacts beyond
-    the single wheel — the customer side never builds.
+    The archive is laid out in three layers:
+
+    1. **Installer artifacts** at the archive root (``setup.cmd``,
+       ``requirements.txt``, the wheel) so a customer can unpack the
+       zip and double-click ``setup.cmd`` to install the CLI.
+    2. **Generated marketplace manifest** at
+       ``plugin/.codebuddy-plugin/marketplace.json``, whose single
+       entry points at the bundled plugin under
+       ``plugin/plugins/<name>/<version>/``.
+    3. **Plugin surface** at ``plugin/plugins/<name>/<version>/``,
+       mirroring the repository's ``.codebuddy-plugin/plugin.json``,
+       ``agents/``, ``skills/`` and ``avatars/`` so Workbuddy can load
+       the expert directly from the archive.
 
     Args:
         out_path: Destination zip path.
+        version: Project version (from ``pyproject.toml``); used in the
+            archive layout and the marketplace manifest.
 
     Raises:
-        RuntimeError: If the wheel cannot be built.
+        RuntimeError: If the wheel cannot be built or the project
+            version cannot be read (propagated from the helpers).
         OSError: When any input file cannot be read or written.
     """
     wheel = _build_wheel()
+    plugin_root_in_zip = f"plugin/plugins/{PLUGIN_NAME}/{version}"
+    setup_cmd = _SETUP_CMD_BODY_TEMPLATE.replace(
+        "<WHEEL_FILENAME>", wheel.name
+    )
+    marketplace_json = _MARKETPLACE_JSON_TEMPLATE.replace(
+        "<VERSION>", version
+    )
+
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("setup.cmd", _SETUP_CMD_BODY)
+        # Layer 1 — installer artifacts (existing behaviour).
+        zf.writestr("setup.cmd", setup_cmd)
         zf.writestr("requirements.txt", REQUIREMENTS_TXT.read_bytes())
         zf.write(wheel, wheel.name)
+
+        # Layer 2 — generated marketplace manifest.
+        zf.writestr(
+            "plugin/.codebuddy-plugin/marketplace.json",
+            marketplace_json,
+        )
+
+        # Layer 3 — plugin surface (manifest + agents + skills + avatars).
+        for src, rel in _iter_plugin_files():
+            zf.write(src, f"{plugin_root_in_zip}/{rel}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -185,7 +346,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(list(argv if argv is not None else sys.argv[1:]))
     out_path = Path(args.out)
     try:
-        _write_plugin(out_path)
+        version = _read_pyproject_version()
+        _write_plugin(out_path, version)
     except (OSError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
